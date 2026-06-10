@@ -51,6 +51,57 @@ const PARRY_WIN = 190, PARRY_CD = 800;
 const BASE_DMG = 22, PLAYER_MAX_HP = 100;
 const CRIT_CHANCE = 0.12, CRIT_MULT = 1.8;
 const ATTACK_DUR = 210, COMBO_WIN = 380;
+const STAMINA_MAX = 100, STAMINA_REGEN = 18, DASH_STAMINA = 30, PARRY_STAMINA = 20;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SYNTHETIC SOUND ENGINE (AudioContext — no assets needed)
+// ════════════════════════════════════════════════════════════════════════════
+const SFX = (() => {
+  let ctx = null;
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+  function play(type) {
+    try {
+      const c = getCtx();
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.connect(g); g.connect(c.destination);
+      const t = c.currentTime;
+      if (type === 'hit') {
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+        g.gain.setValueAtTime(0.18, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        o.start(t); o.stop(t + 0.1);
+      } else if (type === 'crit') {
+        o.type = 'square'; o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(80, t + 0.15);
+        g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        o.start(t); o.stop(t + 0.18);
+      } else if (type === 'dash') {
+        o.type = 'sine'; o.frequency.setValueAtTime(600, t); o.frequency.exponentialRampToValueAtTime(200, t + 0.12);
+        g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        o.start(t); o.stop(t + 0.12);
+      } else if (type === 'parry') {
+        o.type = 'sine'; o.frequency.setValueAtTime(900, t); o.frequency.setValueAtTime(1200, t + 0.03); o.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+        g.gain.setValueAtTime(0.15, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        o.start(t); o.stop(t + 0.22);
+      } else if (type === 'pickup') {
+        o.type = 'sine'; o.frequency.setValueAtTime(500, t); o.frequency.exponentialRampToValueAtTime(900, t + 0.08);
+        g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        o.start(t); o.stop(t + 0.1);
+      } else if (type === 'death') {
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(100, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.6);
+        g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        o.start(t); o.stop(t + 0.6);
+      } else if (type === 'relic') {
+        o.type = 'sine'; o.frequency.setValueAtTime(440, t); o.frequency.setValueAtTime(554, t+0.1); o.frequency.setValueAtTime(660, t+0.2);
+        g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        o.start(t); o.stop(t + 0.4);
+      }
+    } catch(e) {}
+  }
+  return { play };
+})();
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SEEDED RNG
@@ -80,11 +131,16 @@ const EV = {
 const Run = {
   hp: PLAYER_MAX_HP, maxHp: PLAYER_MAX_HP, scrap: 0, relics: [],
   kills: 0, roomsCleared: 0, depth: 0,
+  stamina: STAMINA_MAX, maxStamina: STAMINA_MAX,
+  combo: 0, comboExpiry: 0,
+  roomHistory: [], // minimap
   buffs: {}, // dmgMult, parryBonus, noHeal, deathExplode
   reset() {
     this.hp = PLAYER_MAX_HP; this.maxHp = PLAYER_MAX_HP;
     this.scrap = 0; this.relics = []; this.kills = 0;
     this.roomsCleared = 0; this.depth = 0; this.buffs = {};
+    this.stamina = STAMINA_MAX; this.maxStamina = STAMINA_MAX;
+    this.combo = 0; this.comboExpiry = 0; this.roomHistory = [];
   },
   hurt(n, srcX) {
     if (this.buffs.noHeal && n < 0) return;
@@ -100,6 +156,25 @@ const Run = {
   addScrap(n) { this.scrap += n; Bus.emit(EV.SCRAP, this.scrap); },
   dmg() { return BASE_DMG * (this.buffs.dmgMult || 1); },
   parryWindow() { return PARRY_WIN + (this.buffs.parryBonus || 0); },
+  useStamina(n) {
+    // Shadow Mantle relic: 50% stamina cost reduction
+    const cost = Run.relics.find(r => r.id === 'shadow_mantle') ? Math.floor(n * 0.5) : n;
+    if (this.stamina < cost) return false;
+    this.stamina = Math.max(0, this.stamina - cost);
+    Bus.emit('stamina:change', this.stamina);
+    return true;
+  },
+  regenStamina(delta) {
+    const prev = this.stamina;
+    this.stamina = Math.min(this.maxStamina, this.stamina + STAMINA_REGEN * delta / 1000);
+    if (Math.floor(prev) !== Math.floor(this.stamina)) Bus.emit('stamina:change', this.stamina);
+  },
+  addComboHit() {
+    this.combo++;
+    this.comboExpiry = Date.now() + COMBO_WIN + 200;
+    Bus.emit('combo:hit', this.combo);
+  },
+  resetCombo() { this.combo = 0; Bus.emit('combo:hit', 0); },
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -107,11 +182,13 @@ const Run = {
 // ════════════════════════════════════════════════════════════════════════════
 const Perm = {
   echos: 0, totalRuns: 0, bestDepth: 0,
+  upgrades: { maxHp: 0, dmg: 0, stamina: 0 }, // permanent upgrades bought in hub shop
   load() {
     try { const d = localStorage.getItem('cd_v2'); if (d) Object.assign(this, JSON.parse(d)); } catch(e) {}
+    if (!this.upgrades) this.upgrades = { maxHp: 0, dmg: 0, stamina: 0 };
   },
   save() {
-    try { localStorage.setItem('cd_v2', JSON.stringify({ echos:this.echos, totalRuns:this.totalRuns, bestDepth:this.bestDepth })); } catch(e) {}
+    try { localStorage.setItem('cd_v2', JSON.stringify({ echos:this.echos, totalRuns:this.totalRuns, bestDepth:this.bestDepth, upgrades:this.upgrades })); } catch(e) {}
   },
 };
 
@@ -737,7 +814,95 @@ function buildTextures(scene) {
     for(let i=0;i<3;i++) ctx.fillRect(2+i*4,2+i*3,3,3);
   });
 
-  // ── UI ELEMENTS ─────────────────────────────────────────────────────────
+  mkTex(scene, 'relic_flame_heart', 14, 14, (ctx) => {
+    ctx.fillStyle = '#140400'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#281000'; ctx.fillRect(1,1,12,12);
+    // Heart shape in flame colors
+    ctx.fillStyle = '#ff4010'; ctx.fillRect(3,4,3,5); ctx.fillRect(8,4,3,5); ctx.fillRect(4,3,6,6);
+    ctx.fillStyle = '#ff7020'; ctx.fillRect(4,4,2,4); ctx.fillRect(8,4,2,4); ctx.fillRect(5,3,4,5);
+    ctx.fillStyle = '#ffaa40'; ctx.fillRect(5,5,4,3);
+    ctx.fillStyle = '#fff080'; ctx.fillRect(6,6,2,1);
+    // Flame tip
+    ctx.fillStyle = '#ff8020'; ctx.fillRect(5,9,4,1); ctx.fillRect(6,10,2,1); ctx.fillRect(6,11,2,1);
+  });
+
+  mkTex(scene, 'relic_echo_shield', 14, 14, (ctx) => {
+    ctx.fillStyle = '#000814'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#001028'; ctx.fillRect(1,1,12,12);
+    // Shield outline
+    ctx.fillStyle = '#4060c0'; ctx.fillRect(3,2,8,2); ctx.fillRect(2,4,10,6); ctx.fillRect(3,10,8,2); ctx.fillRect(5,12,4,1);
+    ctx.fillStyle = '#6080e0'; ctx.fillRect(4,3,6,2); ctx.fillRect(3,5,8,5); ctx.fillRect(4,10,6,2); ctx.fillRect(6,12,2,1);
+    ctx.fillStyle = '#a0c0ff'; ctx.fillRect(5,5,4,4);
+    ctx.fillStyle = '#c0d8ff'; ctx.fillRect(6,6,2,2);
+  });
+
+  mkTex(scene, 'relic_shadow_mantle', 14, 14, (ctx) => {
+    ctx.fillStyle = '#050010'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#0a0020'; ctx.fillRect(1,1,12,12);
+    // Swirling shadow
+    ctx.fillStyle = '#3020a0'; ctx.fillRect(3,2,8,10); ctx.fillRect(2,4,10,6);
+    ctx.fillStyle = '#5040c0'; ctx.fillRect(4,3,6,8); ctx.fillRect(3,5,8,4);
+    ctx.fillStyle = '#8060e0'; ctx.fillRect(5,4,4,6);
+    ctx.fillStyle = '#a080ff'; ctx.fillRect(6,5,2,4);
+    // Dark overlay vignette
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(2,2,10,1); ctx.fillRect(2,11,10,1); ctx.fillRect(2,2,1,10); ctx.fillRect(11,2,1,10);
+    ctx.fillStyle = '#c0a0ff'; ctx.fillRect(6,6,2,2);
+  });
+
+  // ── ARCHER ENEMY ─────────────────────────────────────────────────────────
+  mkTex(scene, 'archer_idle', 12, 24, (ctx) => {
+    ctx.fillStyle = '#181020'; ctx.fillRect(2,10,8,12);
+    ctx.fillStyle = '#100c18'; ctx.fillRect(3,10,6,11);
+    ctx.fillStyle = '#0c0810'; for(let i=0;i<3;i++) ctx.fillRect(2+i*2,20+(i%2*2),3,2);
+    ctx.fillStyle = '#181020'; ctx.fillRect(0,10,3,7); ctx.fillRect(9,10,3,7);
+    ctx.fillStyle = '#4a3010'; ctx.fillRect(0,16,3,2); ctx.fillRect(9,16,3,2);
+    ctx.fillStyle = '#602010'; ctx.fillRect(4,10,4,2);
+    // Hood
+    ctx.fillStyle = '#c0a070'; ctx.fillRect(3,3,6,7);
+    ctx.fillStyle = '#181020'; ctx.fillRect(2,3,8,3); ctx.fillRect(2,8,1,2); ctx.fillRect(9,8,1,2);
+    ctx.fillStyle = '#aacc22'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
+    ctx.fillStyle = '#0c0810'; for(let i=0;i<4;i++) ctx.fillRect(3+i,2-Math.floor(i/2),Math.max(1,4-i),1);
+    // Bow
+    ctx.fillStyle = '#6b3a1a'; ctx.fillRect(10,8,1,10);
+    ctx.fillStyle = '#c8a030'; ctx.fillRect(10,8,1,1); ctx.fillRect(10,17,1,1);
+    ctx.fillStyle = 'rgba(200,180,120,0.5)'; ctx.fillRect(10,8,1,10);
+  });
+
+  mkTex(scene, 'archer_shoot', 16, 24, (ctx) => {
+    ctx.fillStyle = '#181020'; ctx.fillRect(2,10,8,12);
+    ctx.fillStyle = '#100c18'; ctx.fillRect(3,10,6,11);
+    ctx.fillStyle = '#181020'; ctx.fillRect(0,9,3,7); ctx.fillRect(12,8,3,6);
+    ctx.fillStyle = '#4a3010'; ctx.fillRect(0,15,3,2);
+    ctx.fillStyle = '#602010'; ctx.fillRect(4,10,4,2);
+    ctx.fillStyle = '#c0a070'; ctx.fillRect(3,3,6,7);
+    ctx.fillStyle = '#181020'; ctx.fillRect(2,3,8,3);
+    ctx.fillStyle = '#aacc22'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
+    // Bow drawn
+    ctx.fillStyle = '#6b3a1a'; ctx.fillRect(13,7,1,12);
+    ctx.fillStyle = 'rgba(200,180,120,0.6)'; ctx.fillRect(13,7,1,12);
+    // Arrow
+    ctx.fillStyle = '#c8a030'; ctx.fillRect(3,12,10,1);
+    ctx.fillStyle = '#aab8cc'; ctx.fillRect(3,12,2,1);
+    ctx.fillStyle = '#8b3a1a'; ctx.fillRect(12,11,2,3);
+  });
+
+  // ── STAMINA PICKUP ───────────────────────────────────────────────────────
+  mkTex(scene, 'pickup_stamina', 10, 10, (ctx) => {
+    ctx.fillStyle = '#101828'; ctx.fillRect(2,1,6,8);
+    ctx.fillStyle = '#1a2838'; ctx.fillRect(3,2,4,6);
+    ctx.fillStyle = '#4060c0'; ctx.fillRect(4,2,2,6);
+    ctx.fillStyle = '#6080e0'; ctx.fillRect(4,3,2,4);
+    ctx.fillStyle = '#a0c0ff'; ctx.fillRect(4,4,2,2);
+    ctx.fillStyle = '#c0d0ff'; ctx.fillRect(4,5,1,1);
+    ctx.fillStyle = '#1a2838'; ctx.fillRect(2,4,2,2); ctx.fillRect(6,4,2,2);
+  });
+
+  // ── ARROW PROJECTILE ────────────────────────────────────────────────────
+  mkTex(scene, 'arrow', 8, 3, (ctx) => {
+    ctx.fillStyle = '#c8a030'; ctx.fillRect(0,1,6,1);
+    ctx.fillStyle = '#aab8cc'; ctx.fillRect(0,1,2,1);
+    ctx.fillStyle = '#8b3a1a'; ctx.fillRect(6,0,2,3);
+  });
   mkTex(scene, 'ui_hp_bg', 80, 8, (ctx) => {
     ctx.fillStyle = '#0a0810'; ctx.fillRect(0,0,80,8);
     ctx.fillStyle = '#150c18'; ctx.fillRect(1,1,78,6);
@@ -949,9 +1114,61 @@ class HubScene extends Phaser.Scene {
     this.add.text(W / 2, H - 72, '[ E ]  ACENDER A FOGUEIRA', {
       fontFamily: 'monospace', fontSize: '6px', color: '#c84010', align: 'center'
     }).setOrigin(0.5);
-    this.add.text(W - 5, H - 5, 'CARNE & DOUTRINA  v0.3', {
+    this.add.text(W - 5, H - 5, 'CARNE & DOUTRINA  v0.4', {
       fontFamily: 'monospace', fontSize: '4px', color: '#0a0810'
     }).setOrigin(1, 1);
+
+    // ── LOJA DE UPGRADES PERMANENTES ────────────────────────────────────
+    const SHOP = [
+      { id:'maxHp',  label:'VID+20', cost:15, max:5, desc:'+20 HP máx permanente' },
+      { id:'dmg',    label:'ATK+15%', cost:20, max:5, desc:'+15% dano permanente' },
+      { id:'stamina',label:'STA+20', cost:12, max:5, desc:'+20 stamina máx permanente' },
+    ];
+
+    const shopX = 60, shopY = H - 50;
+    const gfx = this.add.graphics();
+    gfx.fillStyle(0x080610, 0.9); gfx.fillRect(shopX - 10, shopY - 22, 180, 40);
+    gfx.lineStyle(0.5, 0x6b3a1a); gfx.strokeRect(shopX - 10, shopY - 22, 180, 40);
+    this.add.text(shopX + 70, shopY - 19, 'FERREIRO  [ upgrades ]', {
+      fontFamily: 'monospace', fontSize: '5px', color: '#6b3a1a'
+    }).setOrigin(0.5, 0);
+
+    SHOP.forEach((item, i) => {
+      const bx = shopX + i * 60, by = shopY - 4;
+      const owned = Perm.upgrades[item.id] || 0;
+      const maxed = owned >= item.max;
+      const cost = item.cost + owned * 8;
+      const canBuy = !maxed && Perm.echos >= cost;
+
+      const bg = this.add.graphics();
+      const drawBg = (hover) => {
+        bg.clear();
+        bg.fillStyle(hover ? 0x1a1828 : 0x0e0c14, 0.9); bg.fillRect(bx - 26, by - 10, 52, 26);
+        bg.lineStyle(0.5, maxed ? 0xc8a030 : canBuy ? 0x4a3838 : 0x221820); bg.strokeRect(bx - 26, by - 10, 52, 26);
+      };
+      drawBg(false);
+
+      const col = maxed ? '#c8a030' : canBuy ? '#c8a87a' : '#3a2828';
+      this.add.text(bx, by - 7, item.label, { fontFamily:'monospace', fontSize:'5px', color: col }).setOrigin(0.5, 0);
+      this.add.text(bx, by - 1, maxed ? 'MAX' : `${cost}Ξ`, { fontFamily:'monospace', fontSize:'5px', color: maxed ? '#c8a030' : '#4060aa' }).setOrigin(0.5, 0);
+      this.add.text(bx, by + 6, `(${owned}/${item.max})`, { fontFamily:'monospace', fontSize:'4px', color: '#2a2838' }).setOrigin(0.5, 0);
+
+      if (!maxed) {
+        const zone = this.add.zone(bx, by + 3, 52, 28).setInteractive();
+        zone.on('pointerover', () => { drawBg(true); });
+        zone.on('pointerout', () => { drawBg(false); });
+        zone.on('pointerdown', () => {
+          if (Perm.echos >= cost && Perm.upgrades[item.id] < item.max) {
+            Perm.echos -= cost;
+            Perm.upgrades[item.id] = (Perm.upgrades[item.id] || 0) + 1;
+            Perm.save();
+            SFX.play('relic');
+            // Restart Hub scene to refresh UI
+            this.scene.restart();
+          }
+        });
+      }
+    });
   }
 
   _spawnPlayer() {
@@ -988,6 +1205,12 @@ class HubScene extends Phaser.Scene {
     this.time.delayedCall(400, () => {
       Perm.totalRuns++; Perm.save();
       Run.reset();
+      // Apply permanent upgrades
+      Run.maxHp += (Perm.upgrades.maxHp || 0) * 20;
+      Run.hp = Run.maxHp;
+      Run.maxStamina += (Perm.upgrades.stamina || 0) * 20;
+      Run.stamina = Run.maxStamina;
+      if (Perm.upgrades.dmg) Run.buffs.dmgMult = 1 + (Perm.upgrades.dmg * 0.15);
       this.scene.start('Room', { seed: Date.now() % 0xFFFFFF, depth: 0 });
     });
   }
@@ -1004,6 +1227,7 @@ class RoomScene extends Phaser.Scene {
     this.depth = d.depth || 0;
     this.rng = mulberry32(this.seed);
     this.isBossRoom = (this.depth > 0 && this.depth % 4 === 0);
+    Run.roomHistory.push({ depth: this.depth, boss: this.isBossRoom, cleared: false });
   }
 
   create() {
@@ -1017,7 +1241,7 @@ class RoomScene extends Phaser.Scene {
     this.dashing = false; this.parrying = false; this.attacking = false;
     this.invincible = false; this.attackTimer = 0;
     this.facingRight = true; this.comboStep = 0; this.comboTimer = 0;
-    this.iframeFlash = 0;
+    this.iframeFlash = 0; this.paused = false; this.slowmo = 0;
 
     this._buildRoom();
     this._spawnPlayer();
@@ -1248,20 +1472,67 @@ class RoomScene extends Phaser.Scene {
       Z:Phaser.Input.Keyboard.KeyCodes.Z,
       X:Phaser.Input.Keyboard.KeyCodes.X,
       C:Phaser.Input.Keyboard.KeyCodes.C,
+      P:Phaser.Input.Keyboard.KeyCodes.P,
     });
     this.input.keyboard.on('keydown-Z', () => this._doAttack());
     this.input.keyboard.on('keydown-X', () => this._doParry());
     this.input.keyboard.on('keydown-C', () => this._doDash());
+    this.input.keyboard.on('keydown-P', () => this._togglePause());
+    this.input.keyboard.on('keydown-ESC', () => this._togglePause());
+  }
+
+  _togglePause() {
+    this.paused = !this.paused;
+    if (this.paused) {
+      this.physics.pause();
+      // Dim overlay
+      if (!this._pauseOverlay) {
+        this._pauseOverlay = this.add.graphics().setScrollFactor(0).setDepth(100);
+        this._pauseOverlay.fillStyle(0x000000, 0.7); this._pauseOverlay.fillRect(0,0,W,H);
+        this._pauseTxt = this.add.text(W/2, H/2 - 20, 'PAUSA', {
+          fontFamily:'monospace', fontSize:'16px', color:'#8b1a1a', letterSpacing:8,
+          stroke:'#000', strokeThickness:2
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+        this._pauseTxt2 = this.add.text(W/2, H/2 + 4, '[ P ]  CONTINUAR', {
+          fontFamily:'monospace', fontSize:'6px', color:'#3a2820', letterSpacing:2
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+        this._pauseTxt3 = this.add.text(W/2, H/2 + 18, 'CONTROLS: Z ATACAR · X APARAR · C DASH', {
+          fontFamily:'monospace', fontSize:'4px', color:'#1a1020', letterSpacing:1
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+      } else {
+        this._pauseOverlay.setVisible(true);
+        this._pauseTxt.setVisible(true); this._pauseTxt2.setVisible(true); this._pauseTxt3.setVisible(true);
+      }
+    } else {
+      this.physics.resume();
+      if (this._pauseOverlay) {
+        this._pauseOverlay.setVisible(false);
+        this._pauseTxt.setVisible(false); this._pauseTxt2.setVisible(false); this._pauseTxt3.setVisible(false);
+      }
+    }
   }
 
   update(_, delta) {
-    if (this.isDead) return;
+    if (this.isDead || this.paused) return;
     this.dashCd = Math.max(0, this.dashCd - delta);
     this.parryCd = Math.max(0, this.parryCd - delta);
     this.parryWin = Math.max(0, this.parryWin - delta);
     this.comboTimer = Math.max(0, this.comboTimer - delta);
     this.attackTimer = Math.max(0, this.attackTimer - delta);
     if (this.attackTimer <= 0) this.attacking = false;
+
+    // Combo timeout
+    if (Run.combo > 0 && Date.now() > Run.comboExpiry) Run.resetCombo();
+
+    // Stamina regen
+    Run.regenStamina(delta);
+
+    // Slowmo crit effect
+    if (this.slowmo > 0) {
+      this.slowmo -= delta;
+      this.physics.world.timeScale = this.slowmo > 0 ? 0.25 : 1;
+      if (this.slowmo <= 0) this.physics.world.timeScale = 1;
+    }
 
     // Iframe flash
     if (this.invincible) {
@@ -1347,6 +1618,8 @@ class RoomScene extends Phaser.Scene {
 
   _doParry() {
     if (this.parryCd > 0 || this.attacking) return;
+    if (!Run.useStamina(PARRY_STAMINA)) return; // stamina check
+    SFX.play('parry');
     this.parrying = true;
     this.parryWin = Run.parryWindow();
     this.parryCd = PARRY_CD;
@@ -1364,6 +1637,8 @@ class RoomScene extends Phaser.Scene {
 
   _doDash() {
     if (this.dashCd > 0 || this.dashing) return;
+    if (!Run.useStamina(DASH_STAMINA)) return; // stamina check
+    SFX.play('dash');
     this.dashing = true; this.invincible = true; this.dashCd = DASH_CD;
     const dir = this.facingRight ? 1 : -1;
     this.player.setVelocityX(DASH_SPD * dir);
@@ -1415,6 +1690,22 @@ class RoomScene extends Phaser.Scene {
     this._spawnBlood(e.sprite.x, e.sprite.y, crit ? 8 : 4);
     const kbDir = e.sprite.x > this.player.x ? 1 : -1;
     e.sprite.setVelocityX(200 * kbDir);
+
+    SFX.play(crit ? 'crit' : 'hit');
+    Run.addComboHit();
+
+    // Crit slowmo: brief time scale reduction for impact
+    if (crit) {
+      this.slowmo = 80;
+      this.physics.world.timeScale = 0.25;
+      this.cameras.main.flash(80, 255, 220, 80, false);
+    }
+
+    // Flame Heart relic: deal extra fire damage over time on crit
+    if (crit && Run.relics.find(r => r.id === 'flame_heart')) {
+      this.time.delayedCall(300, () => { if (e.alive && e.hp > 0) this._hitEnemy(e, Math.round(dmg * 0.3), false); });
+    }
+
     if (e.hp <= 0) this._killEnemy(e);
   }
 
@@ -1439,7 +1730,7 @@ class RoomScene extends Phaser.Scene {
 
     // Loot drops
     const lootRoll = this.rng();
-    if (lootRoll < 0.45) this._spawnPickup(e.sprite.x, e.sprite.y - 8, lootRoll < 0.2 ? 'hp' : 'scrap');
+    if (lootRoll < 0.45) this._spawnPickup(e.sprite.x, e.sprite.y - 8, lootRoll < 0.15 ? 'hp' : lootRoll < 0.28 ? 'stamina' : 'scrap');
 
     if (e.isBoss) {
       e.nameText?.destroy(); e.hpBg?.destroy();
@@ -1568,9 +1859,22 @@ class RoomScene extends Phaser.Scene {
     this.cameras.main.flash(60, 180, 20, 20);
     this._spawnBlood(this.player.x, this.player.y, 5);
     Run.hurt(dmg, srcX);
+    Run.resetCombo();
+    SFX.play('hit');
+    // Echo Shield relic: absorb 30% damage once per room
     if (Run.hp <= 0) {
+      // Echo Shield gives a second chance once per run
+      if (Run.relics.find(r => r.id === 'echo_shield') && !Run._shieldUsed) {
+        Run._shieldUsed = true;
+        Run.hp = Math.ceil(Run.maxHp * 0.15);
+        Bus.emit(EV.HIT, { hp: Run.hp, srcX });
+        this._spawnNumber(this.player.x, this.player.y - 20, 'ESCUDO!', '#6080e0', true);
+        this.cameras.main.flash(200, 80, 120, 200, false);
+        return;
+      }
       this.isDead = true;
       this.player.setTint(0x330000);
+      SFX.play('death');
       this.time.delayedCall(700, () => this.scene.start('GameOver'));
     }
   }
@@ -1579,9 +1883,13 @@ class RoomScene extends Phaser.Scene {
     if (this.cleared) return;
     if (this.enemies.every(e => !e.alive)) {
       this.cleared = true; Run.roomsCleared++;
+      // Mark in minimap history
+      const hist = Run.roomHistory.find(r => r.depth === this.depth);
+      if (hist) hist.cleared = true;
       if (this.depth > Perm.bestDepth) { Perm.bestDepth = this.depth; Perm.save(); }
       this._drawDoor(true);
       this.cameras.main.flash(200, 20, 80, 20);
+      SFX.play('relic');
       this.time.delayedCall(500, () => this._offerRelic());
     }
   }
@@ -1596,6 +1904,11 @@ class RoomScene extends Phaser.Scene {
       { id:'scrap_marrow', name:'Tutano de Ferro', desc:'+3 scrap por abate', img:'relic_scrap_marrow', apply() {} },
       { id:'phantom_limb', name:'Membro Fantasma', desc:'Dash→ próximo ataque 2x', img:'relic_phantom_limb', apply() {} },
       { id:'dogma_shard', name:'Estilhaço de Dogma', desc:'5 abates = +10 HP', img:'relic_dogma_shard', apply() {} },
+      // ── NOVOS ITENS ───────────────────────────────────────────────────────
+      { id:'flame_heart', name:'Coração de Chama', desc:'Críticos causam queimadura (+30%)', img:'relic_flame_heart', apply() {} },
+      { id:'echo_shield', name:'Escudo de Eco', desc:'Sobrevive 1x com 15% HP', img:'relic_echo_shield',
+        apply() { Run._shieldUsed = false; } },
+      { id:'shadow_mantle', name:'Manto de Sombra', desc:'Stamina -50% em dash/parry', img:'relic_shadow_mantle', apply() {} },
     ];
 
     const choices = [...RELICS].sort(() => Math.random() - 0.5).slice(0, 3).filter(r => !Run.relics.find(x => x.id === r.id));
@@ -1644,6 +1957,7 @@ class RoomScene extends Phaser.Scene {
     const pick = (r) => {
       Run.relics.push(r); r.apply();
       Bus.emit('relic:picked', r);
+      SFX.play('relic');
       panelG.destroy();
       btns.forEach(b => b.destroy());
       this.input.keyboard.off('keydown-ONE'); this.input.keyboard.off('keydown-TWO'); this.input.keyboard.off('keydown-THREE');
@@ -1671,8 +1985,10 @@ class RoomScene extends Phaser.Scene {
       if (dist < 16) {
         const scrapBonus = Run.relics.find(r => r.id === 'scrap_marrow') ? 3 : 0;
         if (p.type === 'hp') Run.heal(8);
+        else if (p.type === 'stamina') { Run.stamina = Math.min(Run.maxStamina, Run.stamina + 30); Bus.emit('stamina:change', Run.stamina); }
         else Run.addScrap(8 + scrapBonus);
-        this._spawnNumber(p.sprite.x, p.sprite.y - 8, p.type === 'hp' ? '+8 HP' : `+${8 + scrapBonus}`, p.type === 'hp' ? '#44ee66' : '#c8a030');
+        this._spawnNumber(p.sprite.x, p.sprite.y - 8, p.type === 'hp' ? '+8 HP' : p.type === 'stamina' ? '+30 STA' : `+${8 + scrapBonus}`, p.type === 'hp' ? '#44ee66' : p.type === 'stamina' ? '#6080e0' : '#c8a030');
+        SFX.play('pickup');
         p.sprite.destroy(); return false;
       }
       return true;
