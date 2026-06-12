@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CARNE & DOUTRINA</title>
+<title>SOMNARA</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   html,body{width:100%;height:100%;overflow:hidden;background:#000}
@@ -13,29 +13,67 @@
   #boot-screen{
     position:fixed;inset:0;background:#000;display:flex;flex-direction:column;
     align-items:center;justify-content:center;z-index:999;
-    font-family:'Courier New',monospace;color:#8b1a1a;
+    font-family:'Courier New',monospace;color:#4a3a8a;
   }
   #boot-screen h1{
     font-size:clamp(18px,3vw,28px);letter-spacing:10px;margin-bottom:16px;
-    text-shadow:0 0 20px #8b1a1a,0 0 40px #400;
+    text-shadow:0 0 20px #4a3a8a,0 0 40px #221a44;
     animation:flicker 3s infinite;
   }
   #boot-screen .sub{font-size:10px;color:#333;letter-spacing:4px;margin-bottom:30px}
   #boot-progress{width:200px;height:2px;background:#111;position:relative;overflow:hidden}
-  #boot-bar{height:100%;width:0%;background:#8b1a1a;transition:width 0.1s;box-shadow:0 0 8px #8b1a1a}
+  #boot-bar{height:100%;width:0%;background:#4a3a8a;transition:width 0.1s;box-shadow:0 0 8px #4a3a8a}
   #boot-text{font-size:7px;color:#222;margin-top:8px;letter-spacing:2px;animation:blink 1s infinite}
   @keyframes flicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:0.7}94%{opacity:1}97%{opacity:0.8}98%{opacity:1}}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+  /* ── TOUCH CONTROLS ─────────────────────────────────────────────────── */
+  #touch-controls{
+    position:fixed; inset:0; z-index:500; pointer-events:none;
+    display:none; font-family:'Courier New',monospace; user-select:none;
+    -webkit-user-select:none; touch-action:none;
+  }
+  body.is-touch #touch-controls{ display:block; }
+  .tc-btn{
+    position:absolute; pointer-events:auto;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(20,15,25,0.55); border:1px solid rgba(139,26,26,0.6);
+    color:#c8a87a; border-radius:50%; font-size:13px; font-weight:bold;
+    -webkit-tap-highlight-color:transparent;
+    box-shadow:0 0 10px rgba(0,0,0,0.5);
+  }
+  .tc-btn.active{ background:rgba(139,26,26,0.5); border-color:#ff6020; color:#eaf4ff; }
+  .tc-dpad{ width:54px; height:54px; bottom:24px; }
+  #tc-left{ left:14px; }
+  #tc-right{ left:78px; }
+  #tc-jump{ left:46px; bottom:88px; width:54px; height:54px; }
+  .tc-action{ width:50px; height:50px; bottom:24px; font-size:11px; }
+  #tc-attack{ right:14px; bottom:78px; background:rgba(139,26,26,0.45); }
+  #tc-dash{ right:78px; bottom:24px; background:rgba(60,80,180,0.4); }
+  #tc-parry{ right:78px; bottom:90px; background:rgba(80,120,200,0.4); }
+  #tc-pause{
+    top:6px; right:6px; width:26px; height:26px; font-size:11px;
+    border-radius:4px; background:rgba(20,15,25,0.5);
+  }
 </style>
 </head>
 <body>
 <div id="boot-screen">
-  <h1>CARNE &amp; DOUTRINA</h1>
-  <div class="sub">UM JOGO DE PENITÊNCIA E FERRO</div>
+  <h1>SOMNARA</h1>
+  <div class="sub">ONDE OS SONHOS GUARDAM O QUE VOCÊ NÃO CONSEGUE CARREGAR ACORDADO</div>
   <div id="boot-progress"><div id="boot-bar"></div></div>
   <div id="boot-text">inicializando...</div>
 </div>
 <div id="game-container"></div>
+<div id="touch-controls">
+  <div class="tc-btn tc-dpad" id="tc-left">◄</div>
+  <div class="tc-btn tc-dpad" id="tc-right">►</div>
+  <div class="tc-btn" id="tc-jump">▲</div>
+  <div class="tc-btn tc-action" id="tc-attack">ATK</div>
+  <div class="tc-btn tc-action" id="tc-parry">PAR</div>
+  <div class="tc-btn tc-action" id="tc-dash">DSH</div>
+  <div class="tc-btn" id="tc-pause">II</div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
 <script>
@@ -104,8 +142,45 @@ const SFX = (() => {
 })();
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SEEDED RNG
+//  TOUCH INPUT (virtual buttons)
 // ════════════════════════════════════════════════════════════════════════════
+const Touch = { left:false, right:false, jump:false, attack:false, parry:false, dash:false, pause:false };
+(function setupTouch() {
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (!isTouch) return;
+  document.body.classList.add('is-touch');
+
+  function bind(id, key, isPause, isPress) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const press = (e) => {
+      e.preventDefault();
+      el.classList.add('active');
+      Touch[key] = true;
+      if (isPress) Touch[key + '_just'] = true;
+    };
+    const release = (e) => {
+      e.preventDefault();
+      el.classList.remove('active');
+      Touch[key] = false;
+    };
+    el.addEventListener('touchstart', press, { passive:false });
+    el.addEventListener('touchend', release, { passive:false });
+    el.addEventListener('touchcancel', release, { passive:false });
+    el.addEventListener('mousedown', press);
+    el.addEventListener('mouseup', release);
+    el.addEventListener('mouseleave', release);
+  }
+  bind('tc-left', 'left');
+  bind('tc-right', 'right');
+  bind('tc-jump', 'jump');
+  bind('tc-attack', 'attack', false, true);
+  bind('tc-parry', 'parry', false, true);
+  bind('tc-dash', 'dash', false, true);
+  bind('tc-pause', 'pause', false, true);
+})();
+
+
 function mulberry32(seed) {
   return () => {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
@@ -182,10 +257,20 @@ const Run = {
 // ════════════════════════════════════════════════════════════════════════════
 const Perm = {
   echos: 0, totalRuns: 0, bestDepth: 0,
-  upgrades: { maxHp: 0, dmg: 0, stamina: 0 }, // permanent upgrades bought in hub shop
+  upgrades: { voz: 0, memoria: 0, vinculo: 0, despertar: 0 }, // árvore de habilidades (Tecedor)
   load() {
     try { const d = localStorage.getItem('cd_v2'); if (d) Object.assign(this, JSON.parse(d)); } catch(e) {}
-    if (!this.upgrades) this.upgrades = { maxHp: 0, dmg: 0, stamina: 0 };
+    if (!this.upgrades) this.upgrades = { voz: 0, memoria: 0, vinculo: 0, despertar: 0 };
+    // Migração de saves antigos
+    if ('maxHp' in this.upgrades || 'dmg' in this.upgrades || 'stamina' in this.upgrades) {
+      this.upgrades = {
+        voz: this.upgrades.dmg || 0,
+        memoria: this.upgrades.stamina || 0,
+        vinculo: this.upgrades.maxHp || 0,
+        despertar: 0,
+      };
+    }
+    for (const k of ['voz','memoria','vinculo','despertar']) if (!(k in this.upgrades)) this.upgrades[k] = 0;
   },
   save() {
     try { localStorage.setItem('cd_v2', JSON.stringify({ echos:this.echos, totalRuns:this.totalRuns, bestDepth:this.bestDepth, upgrades:this.upgrades })); } catch(e) {}
@@ -209,10 +294,10 @@ function buildTextures(scene) {
     black:'#000000', darkest:'#080810', dark:'#0e0e18',
     stone:'#1a1922', stone2:'#232334', mid:'#2e2d42',
     flesh:'#c8a87a', flesh2:'#b89060', flesh3:'#9a7050',
-    blood:'#8b1a1a', blood2:'#cc2222', blood3:'#ff3333',
+    blood:'#4a3a8a', blood2:'#7a5ad8', blood3:'#b8a0ff',
     gold:'#c8a030', gold2:'#e0b840', rust:'#6b3a1a',
     blade:'#aab8cc', blade2:'#c8d8e8', blade3:'#e8f0ff',
-    ember:'#ff6010', ember2:'#ff9020', holy:'#fff0a0',
+    ember:'#5ab0ff', ember2:'#aee0ff', holy:'#eaf4ff',
     shadow:'rgba(0,0,0,0.6)', mist:'rgba(20,20,40,0.4)',
   };
 
@@ -232,14 +317,14 @@ function buildTextures(scene) {
     // Gauntlet hands
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(1,17,3,2); ctx.fillRect(10,17,3,2);
     // Neck/torso clasp
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(5,10,4,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(6,10,2,1);
     // Head — wrapped in cloth, Blasphemous penitent style
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,3,6,7);
     // Cloth wrap
     ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,8,3); ctx.fillRect(3,8,1,2); ctx.fillRect(10,8,1,2);
     // Eyes — hollow/glowing
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
     // Conical hat — the penitent crown
     ctx.fillStyle = '#0e0c12';
     for(let i=0;i<5;i++) ctx.fillRect(3+i, 2-i, Math.max(1,6-i*2+1), 1);
@@ -263,11 +348,11 @@ function buildTextures(scene) {
       else { ctx.fillStyle='#0e0c12'; ctx.fillRect(5,20,3,5); ctx.fillRect(6,23,3,2); }
       ctx.fillStyle = '#1a1520'; ctx.fillRect(1+lx,11,3,7); ctx.fillRect(10,11+ry,3,7);
       ctx.fillStyle = '#6b3a1a'; ctx.fillRect(1+lx,17,3,2); ctx.fillRect(10,16+ry,3,2);
-      ctx.fillStyle = '#8b1a1a'; ctx.fillRect(5,10,4,2);
+      ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,10,4,2);
       ctx.fillStyle = '#c8a030'; ctx.fillRect(6,10,2,1);
       ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,3,6,7);
       ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,8,3);
-      ctx.fillStyle = '#ff3010'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
+      ctx.fillStyle = '#9ad8ff'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
       ctx.fillStyle = '#0e0c12';
       for(let i=0;i<5;i++) ctx.fillRect(3+i, 2-i, Math.max(1,6-i*2+1), 1);
       ctx.fillRect(6,0,2,1);
@@ -288,11 +373,11 @@ function buildTextures(scene) {
     ctx.fillStyle = '#1a1520'; ctx.fillRect(1,11,3,6);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(12,10,3,5);
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(1,16,3,2);
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(5,10,4,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(6,10,2,1);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,3,6,7);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,8,3);
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<5;i++) ctx.fillRect(3+i,2-i,Math.max(1,6-i*2+1),1);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(2,4,10,1);
     // Sword extended — slash arc
@@ -308,11 +393,11 @@ function buildTextures(scene) {
     ctx.fillStyle = '#14101a'; ctx.fillRect(5,10,6,12);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<4;i++) ctx.fillRect(4+i*2,21+(i%2*2),2,2);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(1,11,3,6);
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(5,10,4,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(6,10,2,1);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,3,6,7);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,8,3);
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<5;i++) ctx.fillRect(3+i,2-i,Math.max(1,6-i*2+1),1);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(2,4,10,1);
     // Overhead smash
@@ -329,16 +414,16 @@ function buildTextures(scene) {
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<4;i++) ctx.fillRect(3+i*2,21+(i%2*2),2,2);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(0,10,3,7);
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(0,16,3,2);
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(4,10,4,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(4,10,4,2);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(5,10,2,1);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(3,3,6,7);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(2,3,8,3);
-    ctx.fillStyle = '#ff5020'; ctx.fillRect(4,5,2,1); ctx.fillRect(7,5,2,1);
+    ctx.fillStyle = '#c8b8ff'; ctx.fillRect(4,5,2,1); ctx.fillRect(7,5,2,1);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<5;i++) ctx.fillRect(2+i,2-i,Math.max(1,6-i*2+1),1);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(1,4,10,1);
     // Charged slash — blood red glow
     ctx.fillStyle = '#e8f0ff'; ctx.fillRect(12,7,6,2);
-    ctx.fillStyle = '#cc2222'; ctx.fillRect(14,6,4,4);
+    ctx.fillStyle = '#7a5ad8'; ctx.fillRect(14,6,4,4);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(12,9,4,1);
     ctx.fillStyle = 'rgba(200,30,30,0.5)'; ctx.fillRect(11,5,9,6);
     ctx.fillStyle = 'rgba(255,200,100,0.3)'; ctx.fillRect(10,4,11,8);
@@ -353,7 +438,7 @@ function buildTextures(scene) {
     for(let i=0;i<5;i++) ctx.fillRect(0,6+i,16-i*2,2);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(5,2,5,6);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(4,2,7,3);
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(6,4,1,1); ctx.fillRect(8,4,1,1);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(6,4,1,1); ctx.fillRect(8,4,1,1);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<4;i++) ctx.fillRect(4+i,1-Math.floor(i/2),Math.max(1,4-i),1);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,9,1);
   });
@@ -369,11 +454,11 @@ function buildTextures(scene) {
     // Parry ward glyph
     ctx.fillStyle = 'rgba(180,180,255,0.7)'; ctx.fillRect(0,7,4,8);
     ctx.fillStyle = '#aabbff'; ctx.fillRect(0,9,1,4); ctx.fillRect(1,8,2,6); ctx.fillRect(3,9,1,4);
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(5,10,4,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(6,10,2,1);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,3,6,7);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(3,3,8,3);
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(5,5,2,1); ctx.fillRect(8,5,2,1);
     ctx.fillStyle = '#0e0c12'; for(let i=0;i<5;i++) ctx.fillRect(3+i,2-i,Math.max(1,6-i*2+1),1);
     ctx.fillStyle = '#1a1520'; ctx.fillRect(2,4,10,1);
   });
@@ -388,11 +473,11 @@ function buildTextures(scene) {
     ctx.fillStyle = '#cc1010'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#c8a87a'; ctx.fillRect(4,4,6,7);
     ctx.fillStyle = '#2a1010'; ctx.fillRect(3,4,8,3);
-    ctx.fillStyle = '#ff5030'; ctx.fillRect(5,6,2,1); ctx.fillRect(8,6,2,1);
+    ctx.fillStyle = '#c8b8ff'; ctx.fillRect(5,6,2,1); ctx.fillRect(8,6,2,1);
     ctx.fillStyle = '#150808'; for(let i=0;i<5;i++) ctx.fillRect(3+i,2-i,Math.max(1,6-i*2+1),1);
     ctx.fillStyle = '#2a1010'; ctx.fillRect(2,5,10,1);
     // Blood splatter
-    ctx.fillStyle = '#cc2222';
+    ctx.fillStyle = '#7a5ad8';
     ctx.fillRect(2,10,2,1); ctx.fillRect(9,9,3,2); ctx.fillRect(5,12,4,1);
   });
 
@@ -414,7 +499,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#302025'; ctx.fillRect(4,3,6,8);
     ctx.fillStyle = '#201520'; ctx.fillRect(3,5,8,4);
     // Hollow eyes — two pinpricks of sickly light
-    ctx.fillStyle = '#aacc22'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
+    ctx.fillStyle = '#9fb8e0'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
     // Crown of thorns / metal band
     ctx.fillStyle = '#6b3a1a';
     ctx.fillRect(4,4,6,1); ctx.fillRect(5,3,4,1);
@@ -434,7 +519,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#6b5030'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#302025'; ctx.fillRect(4,3,6,8);
     ctx.fillStyle = '#201520'; ctx.fillRect(3,5,8,4);
-    ctx.fillStyle = '#aacc22'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
+    ctx.fillStyle = '#9fb8e0'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(4,4,6,1); ctx.fillRect(5,3,4,1);
     ctx.fillStyle = '#8b5020'; for(let i=0;i<4;i++) ctx.fillRect(5+i,2,1,2);
     ctx.fillStyle = '#6b5030'; ctx.fillRect(12,12,1,5);
@@ -453,7 +538,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#6b5030'; ctx.fillRect(5,10,4,2);
     ctx.fillStyle = '#302025'; ctx.fillRect(4,3,6,8);
     ctx.fillStyle = '#201520'; ctx.fillRect(3,5,8,4);
-    ctx.fillStyle = '#dd4010'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
+    ctx.fillStyle = '#6a5ad0'; ctx.fillRect(5,6,1,1); ctx.fillRect(8,6,1,1);
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(4,4,6,1); ctx.fillRect(5,3,4,1);
     ctx.fillStyle = '#8b5020'; for(let i=0;i<4;i++) ctx.fillRect(5+i,2,1,2);
     // Flail swinging
@@ -471,10 +556,10 @@ function buildTextures(scene) {
     ctx.fillStyle = '#5b3020'; ctx.fillRect(5,11,4,2);
     ctx.fillStyle = '#3a2028'; ctx.fillRect(4,4,6,8);
     ctx.fillStyle = '#2a1520'; ctx.fillRect(3,6,8,4);
-    ctx.fillStyle = '#cc3310'; ctx.fillRect(5,7,1,1); ctx.fillRect(8,7,1,1);
+    ctx.fillStyle = '#5a4ab0'; ctx.fillRect(5,7,1,1); ctx.fillRect(8,7,1,1);
     ctx.fillStyle = '#5b3a1a'; ctx.fillRect(4,5,6,1);
     // Blood
-    ctx.fillStyle = '#cc2222'; ctx.fillRect(6,11,3,2); ctx.fillRect(4,10,2,1); ctx.fillRect(8,9,3,2);
+    ctx.fillStyle = '#7a5ad8'; ctx.fillRect(6,11,3,2); ctx.fillRect(4,10,2,1); ctx.fillRect(8,9,3,2);
   });
 
   mkTex(scene, 'grunt_death', 16, 12, (ctx) => {
@@ -488,7 +573,7 @@ function buildTextures(scene) {
     // Blood pool
     ctx.fillStyle = '#8b1010'; ctx.fillRect(0,8,16,4);
     ctx.fillStyle = '#6b0808'; ctx.fillRect(2,9,12,3);
-    ctx.fillStyle = '#cc2222'; ctx.fillRect(4,8,6,1);
+    ctx.fillStyle = '#7a5ad8'; ctx.fillRect(4,8,6,1);
   });
 
   // ── ENEMY — INQUISIDOR (elite enemy) ────────────────────────────────────
@@ -511,9 +596,9 @@ function buildTextures(scene) {
     ctx.fillStyle = '#2a2535'; ctx.fillRect(4,2,8,9);
     ctx.fillStyle = '#1e1828'; ctx.fillRect(5,3,6,7);
     // Visor slit
-    ctx.fillStyle = '#cc4010'; ctx.fillRect(5,6,6,1);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(5,6,6,1);
     // Plume (red horse-hair)
-    ctx.fillStyle = '#8b1a1a'; for(let i=0;i<4;i++) ctx.fillRect(6+i,0,1,4-i);
+    ctx.fillStyle = '#4a3a8a'; for(let i=0;i<4;i++) ctx.fillRect(6+i,0,1,4-i);
     // Sword
     ctx.fillStyle = '#c8d8e8'; ctx.fillRect(14,12,1,14); ctx.fillRect(13,13,3,1);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(13,14,3,1);
@@ -547,7 +632,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#3a3848';
     for(let i=0;i<4;i++) { ctx.fillRect(10,16+i*3,6,1); ctx.fillRect(20,16+i*3,6,1); }
     // Glowing core — unholy light
-    ctx.fillStyle = '#cc4010'; ctx.fillRect(15,20,6,6);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(15,20,6,6);
     ctx.fillStyle = '#ff6020'; ctx.fillRect(16,21,4,4);
     ctx.fillStyle = '#ffaa40'; ctx.fillRect(17,22,2,2);
     // Great shoulder pieces — like a cathedral's flying buttresses
@@ -577,8 +662,8 @@ function buildTextures(scene) {
     // Staff
     ctx.fillStyle = '#8b5030'; ctx.fillRect(34,6,2,46);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(32,4,6,4);
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(34,2,2,4);
-    ctx.fillStyle = '#ff3010'; ctx.fillRect(34,3,2,2);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(34,2,2,4);
+    ctx.fillStyle = '#9ad8ff'; ctx.fillRect(34,3,2,2);
   });
 
   mkTex(scene, 'boss_atk', 40, 52, (ctx) => {
@@ -613,7 +698,7 @@ function buildTextures(scene) {
     // Staff overhead
     ctx.fillStyle = '#8b5030'; ctx.fillRect(36,0,2,30);
     ctx.fillStyle = '#c8a030'; ctx.fillRect(34,0,6,3);
-    ctx.fillStyle = '#ff5020'; ctx.fillRect(35,0,4,3);
+    ctx.fillStyle = '#c8b8ff'; ctx.fillRect(35,0,4,3);
     ctx.fillStyle = 'rgba(255,120,30,0.5)'; ctx.fillRect(32,0,12,8);
   });
 
@@ -679,8 +764,8 @@ function buildTextures(scene) {
     ctx.fillStyle = '#3a3848';
     for(let row=0;row<3;row++) for(let col=0;col<3;col++) ctx.fillRect(4+col*6,5+row*14,2,2);
     // Lock
-    ctx.fillStyle = '#8b1a1a'; ctx.fillRect(8,20,4,6);
-    ctx.fillStyle = '#cc2222'; ctx.fillRect(9,21,2,3);
+    ctx.fillStyle = '#4a3a8a'; ctx.fillRect(8,20,4,6);
+    ctx.fillStyle = '#7a5ad8'; ctx.fillRect(9,21,2,3);
     // Glow from lock — sealed with blood magic
     ctx.fillStyle = 'rgba(180,30,30,0.3)'; ctx.fillRect(4,16,12,12);
   });
@@ -712,7 +797,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#201828'; ctx.fillRect(11,9,6,20);
     ctx.fillStyle = '#2a2838'; ctx.fillRect(12,10,4,3);
     // Fire/light emanating upward
-    ctx.fillStyle = '#c84010'; ctx.fillRect(12,4,4,8);
+    ctx.fillStyle = '#5a4ad8'; ctx.fillRect(12,4,4,8);
     ctx.fillStyle = '#ff6020'; ctx.fillRect(12,2,4,6); ctx.fillRect(13,0,2,4);
     ctx.fillStyle = '#ffaa40'; ctx.fillRect(13,3,2,4);
     ctx.fillStyle = '#ffe080'; ctx.fillRect(13,4,2,2);
@@ -777,10 +862,10 @@ function buildTextures(scene) {
   mkTex(scene, 'relic_overclock', 14, 14, (ctx) => {
     ctx.fillStyle = '#140a00'; ctx.fillRect(0,0,14,14);
     ctx.fillStyle = '#2a1800'; ctx.fillRect(1,1,12,12);
-    ctx.fillStyle = '#c84010'; ctx.fillRect(6,2,2,10); ctx.fillRect(2,6,10,2);
+    ctx.fillStyle = '#5a4ad8'; ctx.fillRect(6,2,2,10); ctx.fillRect(2,6,10,2);
     ctx.fillStyle = '#ff6020'; ctx.fillRect(5,5,4,4);
     ctx.fillStyle = '#ffaa40'; ctx.fillRect(6,6,2,2);
-    ctx.fillStyle = '#fff0a0'; ctx.fillRect(6,6,1,1);
+    ctx.fillStyle = '#eaf4ff'; ctx.fillRect(6,6,1,1);
   });
 
   mkTex(scene, 'relic_scrap_marrow', 14, 14, (ctx) => {
@@ -860,7 +945,7 @@ function buildTextures(scene) {
     // Hood
     ctx.fillStyle = '#c0a070'; ctx.fillRect(3,3,6,7);
     ctx.fillStyle = '#181020'; ctx.fillRect(2,3,8,3); ctx.fillRect(2,8,1,2); ctx.fillRect(9,8,1,2);
-    ctx.fillStyle = '#aacc22'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
+    ctx.fillStyle = '#9fb8e0'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
     ctx.fillStyle = '#0c0810'; for(let i=0;i<4;i++) ctx.fillRect(3+i,2-Math.floor(i/2),Math.max(1,4-i),1);
     // Bow
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(10,8,1,10);
@@ -876,7 +961,7 @@ function buildTextures(scene) {
     ctx.fillStyle = '#602010'; ctx.fillRect(4,10,4,2);
     ctx.fillStyle = '#c0a070'; ctx.fillRect(3,3,6,7);
     ctx.fillStyle = '#181020'; ctx.fillRect(2,3,8,3);
-    ctx.fillStyle = '#aacc22'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
+    ctx.fillStyle = '#9fb8e0'; ctx.fillRect(4,5,1,1); ctx.fillRect(7,5,1,1);
     // Bow drawn
     ctx.fillStyle = '#6b3a1a'; ctx.fillRect(13,7,1,12);
     ctx.fillStyle = 'rgba(200,180,120,0.6)'; ctx.fillRect(13,7,1,12);
@@ -916,7 +1001,7 @@ function buildTextures(scene) {
   mkTex(scene, 'ui_scrap', 10, 10, (ctx) => {
     ctx.fillStyle = '#c8a030'; ctx.fillRect(4,0,2,10);
     ctx.fillStyle = '#e0b840'; ctx.fillRect(0,4,10,2);
-    ctx.fillStyle = '#fff0a0'; ctx.fillRect(4,4,2,2);
+    ctx.fillStyle = '#eaf4ff'; ctx.fillRect(4,4,2,2);
     ctx.fillStyle = '#8b7020'; ctx.fillRect(2,2,2,2); ctx.fillRect(6,2,2,2); ctx.fillRect(2,6,2,2); ctx.fillRect(6,6,2,2);
   });
 
@@ -929,14 +1014,14 @@ function buildTextures(scene) {
 
   // ── PARTICLES ───────────────────────────────────────────────────────────
   mkTex(scene, 'particle_blood', 3, 3, (ctx) => {
-    ctx.fillStyle = '#cc2222'; ctx.fillRect(0,0,3,3);
-    ctx.fillStyle = '#ff3333'; ctx.fillRect(1,1,1,1);
+    ctx.fillStyle = '#7a5ad8'; ctx.fillRect(0,0,3,3);
+    ctx.fillStyle = '#b8a0ff'; ctx.fillRect(1,1,1,1);
   });
   mkTex(scene, 'particle_spark', 3, 3, (ctx) => {
     ctx.fillStyle = '#ffcc40'; ctx.fillRect(1,0,1,3); ctx.fillRect(0,1,3,1);
   });
   mkTex(scene, 'particle_ember', 4, 4, (ctx) => {
-    ctx.fillStyle = '#ff6010'; ctx.fillRect(1,1,2,2);
+    ctx.fillStyle = '#5ab0ff'; ctx.fillRect(1,1,2,2);
     ctx.fillStyle = '#ffaa40'; ctx.fillRect(1,1,1,1);
   });
   mkTex(scene, 'particle_soul', 4, 4, (ctx) => {
@@ -948,6 +1033,204 @@ function buildTextures(scene) {
 // ════════════════════════════════════════════════════════════════════════════
 //  SCENE — BOOT
 // ════════════════════════════════════════════════════════════════════════════
+
+// ============================================================================
+//  SCENE — INTRO  (Narrativa de abertura de Somnara)
+// ============================================================================
+class IntroScene extends Phaser.Scene {
+  constructor() { super('Intro'); }
+
+  create() {
+    this.cameras.main.setBackgroundColor('#000000');
+    this._slides = this._buildSlides();
+    this._idx = 0;
+    this._busy = false;
+    this._eloTargetX = W * 0.5;
+    this._eloTargetY = H * 0.5;
+    this._eloT = 0;
+
+    // Fundo gradiente violeta noturno
+    const gfx = this.add.graphics();
+    for (let y = 0; y < H; y += 2) {
+      const t = y / H;
+      gfx.fillStyle(Phaser.Display.Color.GetColor(
+        Math.round(2 + t * 6), Math.round(1 + t * 3), Math.round(8 + t * 22)));
+      gfx.fillRect(0, y, W, 2);
+    }
+    // Estrelas
+    for (let i = 0; i < 60; i++) {
+      const sx = Math.random() * W, sy = Math.random() * H;
+      gfx.fillStyle(0xeaf4ff, 0.15 + Math.random() * 0.5);
+      gfx.fillRect(Math.round(sx), Math.round(sy), 1, 1);
+    }
+    // Silhuetas de arvores invertidas
+    const tg = this.add.graphics();
+    tg.fillStyle(0x050210, 0.8);
+    [[30,H,20,60],[80,H,14,40],[W-40,H,18,55],[W-90,H,12,35],[W/2-60,H,16,45]].forEach(([x,y,w,h]) => {
+      tg.fillRect(x, y - h, w, h);
+      tg.fillTriangle(x - w*0.5, y - h, x + w*1.5, y - h, x + w*0.5, y - h - 20);
+    });
+
+    // Caixas de texto
+    this._titleBox = this.add.text(W / 2, H * 0.28, '', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#eaf4ff',
+      align: 'center', letterSpacing: 4,
+    }).setOrigin(0.5).setAlpha(0);
+
+    this._textBox = this.add.text(W / 2, H * 0.50, '', {
+      fontFamily: 'monospace', fontSize: '7px', color: '#c8d8ff',
+      align: 'center', wordWrap: { width: W - 60 }, lineSpacing: 5,
+    }).setOrigin(0.5).setAlpha(0);
+
+    this._subBox = this.add.text(W / 2, H * 0.74, '', {
+      fontFamily: 'monospace', fontSize: '5px', color: '#6070a0',
+      align: 'center', wordWrap: { width: W - 80 }, lineSpacing: 4,
+    }).setOrigin(0.5).setAlpha(0);
+
+    // Elo — ser de luz
+    this._elo = this.add.graphics();
+
+    // Hint
+    this.add.text(W - 8, H - 8,
+      '[ ENTER ]  avancar    [ ESC ]  pular', {
+      fontFamily: 'monospace', fontSize: '4px', color: '#151525',
+    }).setOrigin(1, 1);
+
+    this._slideCounter = this.add.text(8, H - 8, '', {
+      fontFamily: 'monospace', fontSize: '4px', color: '#151525',
+    }).setOrigin(0, 1);
+
+    // Input
+    this.input.keyboard.on('keydown-ENTER', () => this._advance());
+    this.input.keyboard.on('keydown-SPACE', () => this._advance());
+    this.input.keyboard.on('keydown-Z',     () => this._advance());
+    this.input.keyboard.on('keydown-ESC',   () => this._skip());
+    this.input.on('pointerdown',            () => this._advance());
+
+    // Anima Elo
+    this.time.addEvent({ delay: 50, loop: true, callback: () => this._animElo() });
+
+    this.cameras.main.fadeIn(600, 0, 0, 0);
+    this.time.delayedCall(400, () => this._showSlide(0));
+  }
+
+  _buildSlides() {
+    return [
+      {
+        title: '',
+        body:  '"Tem uma coisa que ninguem te conta sobre ser invisivel."',
+        sub:   '"Voce comeca a acreditar que e verdade."',
+        eloX: W * 0.72, eloY: H * 0.30,
+      },
+      {
+        title: '',
+        body:  'Ele andava pelos corredores colado na parede.\nAlmocava sozinho na ultima mesa.\nOlhava pela janela pro patio cheio de gente\nque nao enxergava ele.',
+        sub:   'Em casa nao era diferente.\nEle aprendeu a encolher. Aprendeu a nao fazer barulho.',
+        eloX: W * 0.18, eloY: H * 0.42,
+      },
+      {
+        title: '',
+        body:  'A noite, fechava os olhos com forca\ncomo se pudesse espremer o dia todo\npra fora da cabeca.',
+        sub:   'E entao comecou a funcionar.',
+        eloX: W * 0.80, eloY: H * 0.28,
+      },
+      {
+        title: 'A PRIMEIRA QUEDA',
+        body:  'Nao foi um sonho bonito.\nNao foi nuvens e luz.\n\nFoi uma queda.',
+        sub:   'O chao chegou devagar\ncomo se o mundo tivesse decidido pega-lo com cuidado.',
+        eloX: W * 0.50, eloY: H * 0.62,
+      },
+      {
+        title: 'S  O  M  N  A  R  A',
+        body:  'O ceu era violeta e sangrava estrelas lentas.\nAs arvores cresciam de cabeca pra baixo.\nO ar cheirava a lembranca de um dia\nque talvez nunca existiu.',
+        sub:   'Ninguem gritou com ele aqui. Ninguem riu.\nO lugar simplesmente... esperava.',
+        eloX: W * 0.50, eloY: H * 0.22,
+      },
+      {
+        title: 'E  L  O',
+        body:  'Havia um ser pequeno, feito inteiramente de luz fraca.\n\nNao tem genero, nao tem idade,\nnao tem historia propria.',
+        sub:   'Nao resolve. Nao salva. So fica perto.\n\nAs vezes e o suficiente.',
+        eloX: W * 0.50, eloY: H * 0.46,
+      },
+      {
+        title: '',
+        body:  'Somnara estava tentando dizer alguma coisa\nem silencio, com cada arvore invertida\ne cada rio que sobe.',
+        sub:   '"Voce veio pra se esconder\nou pra se encontrar?"',
+        eloX: W * 0.50, eloY: H * 0.50,
+      },
+    ];
+  }
+
+  _showSlide(idx) {
+    if (idx >= this._slides.length) { this._skip(); return; }
+    this._busy = true;
+    const s = this._slides[idx];
+    this._eloTargetX = s.eloX;
+    this._eloTargetY = s.eloY;
+    this._slideCounter.setText(`${idx + 1} / ${this._slides.length}`);
+
+    const targets = [this._titleBox, this._textBox, this._subBox];
+    this.tweens.add({
+      targets, alpha: 0, duration: 280,
+      onComplete: () => {
+        this._titleBox.setText(s.title || '');
+        this._textBox.setText(s.body || '');
+        this._subBox.setText(s.sub || '');
+        const hasTitle = !!s.title;
+        this._titleBox.setY(hasTitle ? H * 0.28 : -50);
+        this._textBox.setY(hasTitle ? H * 0.50 : H * 0.43);
+        this._subBox.setY(hasTitle ? H * 0.74 : H * 0.70);
+        this.tweens.add({
+          targets, alpha: 1, duration: 500,
+          onComplete: () => { this._busy = false; }
+        });
+      }
+    });
+  }
+
+  _advance() {
+    if (this._busy) {
+      this.tweens.killAll();
+      [this._titleBox, this._textBox, this._subBox].forEach(t => t.setAlpha(1));
+      this._busy = false;
+      return;
+    }
+    this._idx++;
+    this._showSlide(this._idx);
+  }
+
+  _skip() {
+    this.tweens.killAll();
+    this.cameras.main.fade(500, 0, 0, 0);
+    this.time.delayedCall(500, () => { this.scene.stop(); this.scene.start('Hub'); });
+  }
+
+  _animElo() {
+    this._eloT += 0.07;
+    const t = this._eloT;
+    const ex = this._eloTargetX + Math.sin(t * 1.2) * 9;
+    const ey = this._eloTargetY + Math.cos(t * 0.85) * 5;
+    this._elo.clear();
+    // Aura
+    this._elo.fillStyle(0x7080c0, 0.04 + Math.sin(t * 1.8) * 0.02);
+    this._elo.fillCircle(ex, ey, 22 + Math.sin(t * 0.7) * 4);
+    this._elo.fillStyle(0xa0b8f0, 0.10 + Math.sin(t * 2.2) * 0.04);
+    this._elo.fillCircle(ex, ey, 10 + Math.sin(t) * 2);
+    // Nucleo
+    this._elo.fillStyle(0xdde8ff, 0.65 + Math.sin(t * 3) * 0.2);
+    this._elo.fillCircle(ex, ey, 3);
+    this._elo.fillStyle(0xffffff, 0.95);
+    this._elo.fillRect(Math.round(ex) - 1, Math.round(ey) - 1, 2, 2);
+    // Po de luz
+    if (Math.random() < 0.25) {
+      const dust = this.add.graphics();
+      dust.fillStyle(0xaabbff, 0.3);
+      dust.fillRect(Math.round(ex + (Math.random()-0.5)*6), Math.round(ey + (Math.random()-0.5)*6), 1, 1);
+      this.tweens.add({ targets: dust, alpha: 0, duration: 400, onComplete: () => dust.destroy() });
+    }
+  }
+}
+
 class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
 
@@ -956,7 +1239,7 @@ class BootScene extends Phaser.Scene {
     let prog = 0;
     const bar = document.getElementById('boot-bar');
     const txt = document.getElementById('boot-text');
-    const msgs = ['inicializando motor...','carregando doutrina...','preparando penitência...','bênção concedida.'];
+    const msgs = ['fechando os olhos...','caindo em somnara...','procurando elo...','o sonho espera.'];
     const interval = setInterval(() => {
       prog += 8 + Math.random() * 12;
       if (prog > 100) prog = 100;
@@ -966,7 +1249,14 @@ class BootScene extends Phaser.Scene {
         clearInterval(interval);
         setTimeout(() => {
           document.getElementById('boot-screen').style.display = 'none';
-          this.scene.start('Hub');
+          // Mostra intro apenas na primeira visita da sessao
+          const showIntro = !sessionStorage.getItem('somnara_intro_seen');
+          if (showIntro) {
+            sessionStorage.setItem('somnara_intro_seen', '1');
+            this.scene.start('Intro');
+          } else {
+            this.scene.start('Hub');
+          }
         }, 400);
       }
     }, 80);
@@ -1031,7 +1321,7 @@ class HubScene extends Phaser.Scene {
     }
 
     // Stained glass windows (abstract colored panes)
-    [[80, 20, 0x8b1a1a], [200, 15, 0x1a3a8b], [330, 20, 0x8b6a1a], [420, 18, 0x2a8b1a]].forEach(([x, y, col]) => {
+    [[80, 20, 0x6a5ad8], [200, 15, 0x3a6ad8], [330, 20, 0xd88ad8], [420, 18, 0x4ad8c8]].forEach(([x, y, col]) => {
       gfx.fillStyle(col, 0.15); gfx.fillRect(x, y, 24, 40);
       gfx.fillStyle(col, 0.25); gfx.fillRect(x + 4, y + 2, 16, 36);
       // Cross mullion
@@ -1060,21 +1350,37 @@ class HubScene extends Phaser.Scene {
     this.portalSprite = this.add.image(W / 2, H - 58, 'portal').setOrigin(0.5);
     this.portalGlow = this.add.graphics();
 
-    // Ambient lore text (environmental storytelling)
+    // Ambient lore text (environmental storytelling — lore de Somnara)
     const lore = [
-      'A CARNE É O TEMPLO', 'DOUTRINA NÃO SE QUESTIONA',
-      'PECADO = CARNE', 'SYNDESIS CORP — DIVISÃO DE SALVAÇÃO'
+      'VOCE VEIO PRA SE ESCONDER OU SE ENCONTRAR?',
+      'CADA SONHO DEIXA UMA CICATRIZ',
+      'SOMNARA LEMBRA O QUE VOCE ESQUECEU',
+      'ELO NAO FOGE',
     ];
     lore.forEach((txt, i) => {
       this.add.text(30 + i * 110, 60 + (i % 2) * 40, txt, {
-        fontFamily: 'monospace', fontSize: '4px', color: '#1a1526', alpha: 0.3
-      }).setAngle(-3 + i * 2).setAlpha(0.25);
+        fontFamily: 'monospace', fontSize: '4px', color: '#1a1526'
+      }).setAngle(-3 + i * 2).setAlpha(0.22);
+    });
+
+    // Fragmentos de lore flututando como folhas
+    const fragments = [
+      { txt: '"Ele aprendeu a encolher."', x: 40,  y: 100, angle: -8 },
+      { txt: '"Nao fazer barulho."',        x: 200, y: 80,  angle: 5  },
+      { txt: '"O lugar simplesmente...\nesperava."', x: 340, y: 120, angle: -4 },
+      { txt: '"As vezes e o suficiente."', x: 110, y: 145, angle: 7  },
+    ];
+    fragments.forEach(({ txt, x, y, angle }) => {
+      this.add.text(x, y, txt, {
+        fontFamily: 'monospace', fontSize: '4px', color: '#2a2850',
+        align: 'center', wordWrap: { width: 80 }
+      }).setAngle(angle).setAlpha(0.18);
     });
 
     // NPC labels
-    [[60, H - 14, 'FERREIRO\n[loja]', '#2a2838'],
-     [W - 60, H - 14, 'ORÁCULO\n[lore]', '#1a2818'],
-     [W / 2 - 80, H - 14, 'FORJADORA\n[upgrades]', '#1a1828']].forEach(([x, y, lbl, col]) => {
+    [[60, H - 14, 'TECEDOR\n[fragmentos]', '#2a2838'],
+     [W - 60, H - 14, 'ORÁCULO\n[memória]', '#1a2818'],
+     [W / 2 - 80, H - 14, 'ELO\n[companhia]', '#1a1828']].forEach(([x, y, lbl, col]) => {
       this.add.text(x, y - 16, lbl, { fontFamily: 'monospace', fontSize: '5px', color: col, align: 'center' }).setOrigin(0.5);
       gfx.fillStyle(0x1a1020, 0.9); gfx.fillRect(x - 6, y - 20, 12, 20);
       gfx.fillStyle(0x2a2030); gfx.fillCircle(x, y - 24, 5);
@@ -1108,52 +1414,64 @@ class HubScene extends Phaser.Scene {
   }
 
   _buildUI() {
-    this.add.text(8, 8, `RUNS: ${Perm.totalRuns}  ·  ECOS: ${Perm.echos}Ξ  ·  MELHOR: SETOR ${Perm.bestDepth}`, {
+    this.add.text(8, 8, `SONHOS: ${Perm.totalRuns}  ·  ECOS: ${Perm.echos}Ξ  ·  MAIS FUNDO: CAMADA ${Perm.bestDepth}`, {
       fontFamily: 'monospace', fontSize: '5px', color: '#1a1526'
     });
-    this.add.text(W / 2, H - 72, '[ E ]  ACENDER A FOGUEIRA', {
-      fontFamily: 'monospace', fontSize: '6px', color: '#c84010', align: 'center'
+    this.add.text(W / 2, H - 72, document.body.classList.contains('is-touch') ? '[ ATK ]  FECHAR OS OLHOS' : '[ E ]  FECHAR OS OLHOS', {
+      fontFamily: 'monospace', fontSize: '6px', color: '#5a4ad8', align: 'center'
     }).setOrigin(0.5);
-    this.add.text(W - 5, H - 5, 'CARNE & DOUTRINA  v0.4', {
+    this.add.text(W - 5, H - 5, 'SOMNARA  v0.1', {
       fontFamily: 'monospace', fontSize: '4px', color: '#0a0810'
     }).setOrigin(1, 1);
 
-    // ── LOJA DE UPGRADES PERMANENTES ────────────────────────────────────
-    const SHOP = [
-      { id:'maxHp',  label:'VID+20', cost:15, max:5, desc:'+20 HP máx permanente' },
-      { id:'dmg',    label:'ATK+15%', cost:20, max:5, desc:'+15% dano permanente' },
-      { id:'stamina',label:'STA+20', cost:12, max:5, desc:'+20 stamina máx permanente' },
+    // Botao "rever historia"
+    const histBtn = this.add.text(8, H - 5, '[ H ]  REVER HISTORIA', {
+      fontFamily: 'monospace', fontSize: '4px', color: '#151530'
+    }).setOrigin(0, 1).setInteractive({ useHandCursor: true });
+    histBtn.on('pointerover', () => histBtn.setColor('#5060a0'));
+    histBtn.on('pointerout',  () => histBtn.setColor('#151530'));
+    histBtn.on('pointerdown', () => this._openIntro());
+    this.input.keyboard.on('keydown-H', () => this._openIntro());
+
+    // ── ÁRVORE DE HABILIDADES (TECEDOR) ─────────────────────────────────
+    const TREE = [
+      { id:'voz',       label:'VOZ',      cost:15, max:3, desc:'+12% dano · +3% crítico por nível', col:'#9ad8ff' },
+      { id:'memoria',   label:'MEMÓRIA',  cost:12, max:3, desc:'+15 energia máx · regen +15% por nível', col:'#aee0ff' },
+      { id:'vinculo',   label:'VÍNCULO',  cost:15, max:3, desc:'+15 vontade máx · Elo cura quando parado', col:'#c8b8ff' },
+      { id:'despertar', label:'DESPERTAR',cost:40, max:1, desc:'1ª queda fatal: sobrevive com 15% de vontade',
+        req: () => Perm.upgrades.voz >= 1 && Perm.upgrades.memoria >= 1 && Perm.upgrades.vinculo >= 1, col:'#eaf4ff' },
     ];
 
-    const shopX = 60, shopY = H - 50;
+    const shopX = 55, shopY = H - 50;
     const gfx = this.add.graphics();
-    gfx.fillStyle(0x080610, 0.9); gfx.fillRect(shopX - 10, shopY - 22, 180, 40);
-    gfx.lineStyle(0.5, 0x6b3a1a); gfx.strokeRect(shopX - 10, shopY - 22, 180, 40);
-    this.add.text(shopX + 70, shopY - 19, 'FERREIRO  [ upgrades ]', {
+    gfx.fillStyle(0x080610, 0.9); gfx.fillRect(shopX - 10, shopY - 22, 230, 40);
+    gfx.lineStyle(0.5, 0x6b3a1a); gfx.strokeRect(shopX - 10, shopY - 22, 230, 40);
+    this.add.text(shopX + 105, shopY - 19, 'TECEDOR  —  ÁRVORE DE SI', {
       fontFamily: 'monospace', fontSize: '5px', color: '#6b3a1a'
     }).setOrigin(0.5, 0);
 
-    SHOP.forEach((item, i) => {
-      const bx = shopX + i * 60, by = shopY - 4;
+    TREE.forEach((item, i) => {
+      const bx = shopX + i * 56, by = shopY - 4;
       const owned = Perm.upgrades[item.id] || 0;
       const maxed = owned >= item.max;
-      const cost = item.cost + owned * 8;
-      const canBuy = !maxed && Perm.echos >= cost;
+      const locked = item.req ? !item.req() : false;
+      const cost = item.cost + owned * 10;
+      const canBuy = !maxed && !locked && Perm.echos >= cost;
 
       const bg = this.add.graphics();
       const drawBg = (hover) => {
         bg.clear();
-        bg.fillStyle(hover ? 0x1a1828 : 0x0e0c14, 0.9); bg.fillRect(bx - 26, by - 10, 52, 26);
-        bg.lineStyle(0.5, maxed ? 0xc8a030 : canBuy ? 0x4a3838 : 0x221820); bg.strokeRect(bx - 26, by - 10, 52, 26);
+        bg.fillStyle(hover && !locked ? 0x1a1828 : 0x0e0c14, 0.9); bg.fillRect(bx - 26, by - 10, 52, 26);
+        bg.lineStyle(0.5, maxed ? 0xc8a030 : locked ? 0x221820 : canBuy ? 0x4a3838 : 0x221820); bg.strokeRect(bx - 26, by - 10, 52, 26);
       };
       drawBg(false);
 
-      const col = maxed ? '#c8a030' : canBuy ? '#c8a87a' : '#3a2828';
+      const col = maxed ? '#c8a030' : locked ? '#3a2828' : canBuy ? item.col : '#3a2828';
       this.add.text(bx, by - 7, item.label, { fontFamily:'monospace', fontSize:'5px', color: col }).setOrigin(0.5, 0);
-      this.add.text(bx, by - 1, maxed ? 'MAX' : `${cost}Ξ`, { fontFamily:'monospace', fontSize:'5px', color: maxed ? '#c8a030' : '#4060aa' }).setOrigin(0.5, 0);
+      this.add.text(bx, by - 1, maxed ? 'MAX' : locked ? '???' : `${cost}Ξ`, { fontFamily:'monospace', fontSize:'5px', color: maxed ? '#c8a030' : '#4060aa' }).setOrigin(0.5, 0);
       this.add.text(bx, by + 6, `(${owned}/${item.max})`, { fontFamily:'monospace', fontSize:'4px', color: '#2a2838' }).setOrigin(0.5, 0);
 
-      if (!maxed) {
+      if (!maxed && !locked) {
         const zone = this.add.zone(bx, by + 3, 52, 28).setInteractive();
         zone.on('pointerover', () => { drawBg(true); });
         zone.on('pointerout', () => { drawBg(false); });
@@ -1184,20 +1502,35 @@ class HubScene extends Phaser.Scene {
   update() {
     if (!this.player) return;
     const k = this.keys, b = this.player.body;
-    if (k.left.isDown || k.A.isDown) {
+    const goLeft = k.left.isDown || k.A.isDown || Touch.left;
+    const goRight = k.right.isDown || k.D.isDown || Touch.right;
+    if (goLeft) {
       this.player.setVelocityX(-SPD); this.player.setFlipX(true);
       this.player.setTexture('player_run' + (Math.floor(Date.now() / 110) % 3 + 1));
-    } else if (k.right.isDown || k.D.isDown) {
+    } else if (goRight) {
       this.player.setVelocityX(SPD); this.player.setFlipX(false);
       this.player.setTexture('player_run' + (Math.floor(Date.now() / 110) % 3 + 1));
     } else {
       this.player.setVelocityX(0); this.player.setTexture('player_idle');
     }
-    if ((k.up.isDown || k.W.isDown || k.SPACE.isDown) && b.blocked.down)
+    if ((k.up.isDown || k.W.isDown || k.SPACE.isDown || Touch.jump) && b.blocked.down)
       this.player.setVelocityY(JUMP);
-    if (Phaser.Input.Keyboard.JustDown(k.E) &&
-        Phaser.Math.Distance.Between(this.player.x, this.player.y, W / 2, H - 58) < 60)
+    if ((Phaser.Input.Keyboard.JustDown(k.E) || Touch.attack_just) &&
+        Phaser.Math.Distance.Between(this.player.x, this.player.y, W / 2, H - 58) < 60) {
+      Touch.attack_just = false;
       this._startRun();
+    }
+    Touch.attack_just = false;
+  }
+
+  _openIntro() {
+    // Reseta flag de sessao para forcar exibicao
+    sessionStorage.removeItem('somnara_intro_seen');
+    this.cameras.main.fade(400, 0, 0, 0);
+    this.time.delayedCall(400, () => {
+      this.scene.stop('UI');
+      this.scene.start('Intro');
+    });
   }
 
   _startRun() {
@@ -1253,10 +1586,13 @@ class RoomScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, this._roomW, H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
+    // Notifica UI sobre profundidade (para mensagens de Elo)
+    Bus.emit('room:start', this.depth);
+
     // Room label
     const label = this.isBossRoom
-      ? `⚠  NÚCLEO  ·  BISPO MECÂNICO  ·  SETOR ${this.depth}`
-      : `SETOR ${this.depth + 1}  ·  PROFUNDIDADE ${this.depth}`;
+      ? `⚠  CAMADA ABISSAL  ·  O FRAGMENTADO MAIOR  ·  CAMADA ${this.depth}`
+      : `CAMADA ${this.depth + 1}  ·  SOMNARA  ·  SONHO ${this.depth}`;
     this.add.text(W / 2, 6, label, {
       fontFamily: 'monospace', fontSize: this.isBossRoom ? '6px' : '5px',
       color: this.isBossRoom ? '#cc2020' : '#1a1526', align: 'center'
@@ -1293,7 +1629,7 @@ class RoomScene extends Phaser.Scene {
 
     // Stained glass ceiling
     for (let x = 40; x < this._roomW; x += 120) {
-      const cols2 = [0x8b1a1a, 0x1a3a8b, 0x8b6a1a, 0x2a6b1a];
+      const cols2 = [0x6a5ad8, 0x3a6ad8, 0xd88ad8, 0x3aa8c8];
       const col = cols2[Math.floor(this.rng() * 4)];
       gfx.fillStyle(col, 0.12); gfx.fillRect(x, 0, 70, 35);
       gfx.fillStyle(0x0a0810, 0.8); gfx.fillRect(x + 30, 0, 3, 35);
@@ -1310,11 +1646,18 @@ class RoomScene extends Phaser.Scene {
     }
 
     // Lore/atmosphere text
-    const atm = ['OBEDIÊNCIA', 'PURIFICAÇÃO', 'DOGMA IV', 'NÓ NEURAL', 'SYNCORP SA', 'CARNE=PECADO'];
+    // Textos ambiente — fragmentos da narrativa de Somnara espalhados pelas paredes
+    const atm = [
+      'VOCE JA ESTEVE AQUI?', 'ELE APRENDEU A ENCOLHER',
+      'SOMNARA LEMBRA', 'OS RIOS SOBEM',
+      'AS ARVORES TEM RAIZES NO CEU', 'O LUGAR ESPERAVA',
+      'ELO FICA PERTO', 'ONDE OS SONHOS GUARDAM',
+      'NAO TEM VOLTA FACIL', 'O DIA QUE TALVEZ NUNCA EXISTIU',
+    ];
     for (let i = 0; i < Math.floor(this._roomW / 120); i++) {
       this.add.text(60 + i * 120, 8 + (i % 2) * 20, atm[i % atm.length], {
-        fontFamily: 'monospace', fontSize: '4px', color: '#0e0c14', alpha: 0.4
-      });
+        fontFamily: 'monospace', fontSize: '4px', color: '#0e0c14'
+      }).setAlpha(0.35);
     }
 
     // Floor tiles
@@ -1443,8 +1786,8 @@ class RoomScene extends Phaser.Scene {
     b.sprite.body.setGravityY(GRAVITY);
     b.sprite.setSize(26, 44).setOffset(5, 6);
     b.hpBar = this.add.graphics();
-    b.nameText = this.add.text(W / 2, H - 14, 'BISPO MECÂNICO', {
-      fontFamily: 'monospace', fontSize: '7px', color: '#8b1a1a',
+    b.nameText = this.add.text(W / 2, H - 14, 'O FRAGMENTADO MAIOR — O VAZIO DE PESO', {
+      fontFamily: 'monospace', fontSize: '7px', color: '#4a3a8a',
       stroke: '#000', strokeThickness: 1
     }).setScrollFactor(0).setOrigin(0.5, 1);
     b.hpBg = this.add.graphics().setScrollFactor(0);
@@ -1490,13 +1833,13 @@ class RoomScene extends Phaser.Scene {
         this._pauseOverlay = this.add.graphics().setScrollFactor(0).setDepth(100);
         this._pauseOverlay.fillStyle(0x000000, 0.7); this._pauseOverlay.fillRect(0,0,W,H);
         this._pauseTxt = this.add.text(W/2, H/2 - 20, 'PAUSA', {
-          fontFamily:'monospace', fontSize:'16px', color:'#8b1a1a', letterSpacing:8,
+          fontFamily:'monospace', fontSize:'16px', color:'#4a3a8a', letterSpacing:8,
           stroke:'#000', strokeThickness:2
         }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
         this._pauseTxt2 = this.add.text(W/2, H/2 + 4, '[ P ]  CONTINUAR', {
           fontFamily:'monospace', fontSize:'6px', color:'#3a2820', letterSpacing:2
         }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
-        this._pauseTxt3 = this.add.text(W/2, H/2 + 18, 'CONTROLS: Z ATACAR · X APARAR · C DASH', {
+        this._pauseTxt3 = this.add.text(W/2, H/2 + 18, 'CONTROLES: Z AGIR · X CONFIAR · C DESVIAR', {
           fontFamily:'monospace', fontSize:'4px', color:'#1a1020', letterSpacing:1
         }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
       } else {
@@ -1513,6 +1856,10 @@ class RoomScene extends Phaser.Scene {
   }
 
   update(_, delta) {
+    if (Touch.attack_just) { Touch.attack_just = false; if (!this.isDead && !this.paused) this._doAttack(); }
+    if (Touch.parry_just) { Touch.parry_just = false; if (!this.isDead && !this.paused) this._doParry(); }
+    if (Touch.dash_just) { Touch.dash_just = false; if (!this.isDead && !this.paused) this._doDash(); }
+    if (Touch.pause_just) { Touch.pause_just = false; if (!this.isDead) this._togglePause(); }
     if (this.isDead || this.paused) return;
     this.dashCd = Math.max(0, this.dashCd - delta);
     this.parryCd = Math.max(0, this.parryCd - delta);
@@ -1552,18 +1899,31 @@ class RoomScene extends Phaser.Scene {
 
   _movePlayer(delta) {
     const k = this.keys, b = this.player.body;
-    if (this.dashing || this.attacking) return;
-    if (k.left.isDown || k.A.isDown) {
+    const goLeft = k.left.isDown || k.A.isDown || Touch.left;
+    const goRight = k.right.isDown || k.D.isDown || Touch.right;
+    if (this.dashing) return;
+    if (this.attacking) {
+      // Permite movimento reduzido durante o ataque (não trava o jogador)
+      if (goLeft) {
+        this.player.setVelocityX(-SPD * 0.35); this.facingRight = false; this.player.setFlipX(true);
+      } else if (goRight) {
+        this.player.setVelocityX(SPD * 0.35); this.facingRight = true; this.player.setFlipX(false);
+      } else {
+        this.player.setVelocityX(0);
+      }
+      return;
+    }
+    if (goLeft) {
       this.player.setVelocityX(-SPD); this.facingRight = false; this.player.setFlipX(true);
       this.player.setTexture('player_run' + (Math.floor(Date.now() / 110) % 3 + 1));
-    } else if (k.right.isDown || k.D.isDown) {
+    } else if (goRight) {
       this.player.setVelocityX(SPD); this.facingRight = true; this.player.setFlipX(false);
       this.player.setTexture('player_run' + (Math.floor(Date.now() / 110) % 3 + 1));
     } else {
       this.player.setVelocityX(0);
       this.player.setTexture(this.parrying ? 'player_parry' : 'player_idle');
     }
-    if ((k.up.isDown || k.W.isDown || k.SPACE.isDown) && b.blocked.down)
+    if ((k.up.isDown || k.W.isDown || k.SPACE.isDown || Touch.jump) && b.blocked.down)
       this.player.setVelocityY(JUMP);
   }
 
@@ -1762,7 +2122,7 @@ class RoomScene extends Phaser.Scene {
       Bus.emit(EV.BOSS_PHASE, 2);
       this.cameras.main.shake(250, 0.012);
       this.cameras.main.flash(300, 120, 20, 10);
-      this._spawnNumber(e.sprite.x, e.sprite.y - 20, 'FASE II', '#ff3010', true);
+      this._spawnNumber(e.sprite.x, e.sprite.y - 20, 'FASE II', '#9ad8ff', true);
       // Emit embers
       for (let i = 0; i < 10; i++) {
         const em = this.add.image(e.sprite.x + (Math.random() - 0.5) * 30, e.sprite.y + (Math.random() - 0.5) * 20, 'particle_ember');
@@ -1875,7 +2235,13 @@ class RoomScene extends Phaser.Scene {
       this.isDead = true;
       this.player.setTint(0x330000);
       SFX.play('death');
-      this.time.delayedCall(700, () => this.scene.start('GameOver'));
+      this.time.delayedCall(700, () => {
+        this.cameras.main.fade(300, 0, 0, 0);
+        this.time.delayedCall(300, () => {
+          this.scene.stop('UI');
+          this.scene.start('GameOver');
+        });
+      });
     }
   }
 
@@ -1890,25 +2256,122 @@ class RoomScene extends Phaser.Scene {
       this._drawDoor(true);
       this.cameras.main.flash(200, 20, 80, 20);
       SFX.play('relic');
-      this.time.delayedCall(500, () => this._offerRelic());
+      // A cada 3 camadas, exibe fragmento de lore antes da recompensa
+      const showLore = this.depth > 0 && this.depth % 3 === 0;
+      this.time.delayedCall(500, () => {
+        if (showLore) this._showLoreFragment(() => this._offerRelic());
+        else this._offerRelic();
+      });
     }
+  }
+
+  // ── FRAGMENTO DE LORE — aparece a cada 3 camadas ───────────────────────
+  _showLoreFragment(callback) {
+    const FRAGMENTS = [
+      {
+        speaker: 'SOMNARA',
+        text: 'Somnara nao foi criada. Ela cresceu — alimentada por seculos de sonhos esquecidos, pesadelos engolidos, imaginacoes sufocadas antes de serem ditas em voz alta.',
+        color: '#7a8ad8',
+      },
+      {
+        speaker: 'O GAROTO',
+        text: 'Ele pensou que tinha escapado. Por um tempo, parecia verdade. Em Somnara ele podia falar sem que ninguem risse. Podia ocupar espaco sem pedir desculpa.',
+        color: '#a8c8e8',
+      },
+      {
+        speaker: 'ELO',
+        text: 'Elo existe para acompanhar quem chega sozinho. Nao resolve. Nao salva. So fica perto. E a primeira vez em muito tempo que algo nao fugiu.',
+        color: '#c8d8ff',
+      },
+      {
+        speaker: 'OS TECEDORES',
+        text: 'Os Tecedores nao falam com palavras. Falam com imagens que aparecem na cabeca como lembrancas de coisas que nunca aconteceram.',
+        color: '#d8b0ff',
+      },
+      {
+        speaker: 'OS FRAGMENTADOS',
+        text: 'Os Fragmentados sao criaturas nascidas de sonhos interrompidos, incompletas, perigosas nao por maldade mas por confusao. Eles nao sabem que sao pedacos de algo que nao foi terminado.',
+        color: '#c8a8a8',
+      },
+      {
+        speaker: 'SOMNARA',
+        text: 'O mundo estava mudando em torno dele. As ruinas comecaram a ter a forma dos corredores da escola. As sombras tinham vozes conhecidas.',
+        color: '#8880cc',
+      },
+    ];
+
+    const frag = FRAGMENTS[Math.floor(Math.random() * FRAGMENTS.length)];
+    const panelG = this.add.graphics().setScrollFactor(0).setDepth(50);
+    const cx = W / 2, cy = H / 2;
+
+    // Overlay
+    panelG.fillStyle(0x000000, 0.88); panelG.fillRect(0, 0, W, H);
+    panelG.fillStyle(0x05040e, 0.98); panelG.fillRect(cx - 160, cy - 55, 320, 110);
+    panelG.lineStyle(0.5, 0x2a2050); panelG.strokeRect(cx - 160, cy - 55, 320, 110);
+    panelG.lineStyle(0.5, 0x4a3890, 0.4); panelG.strokeRect(cx - 158, cy - 53, 316, 106);
+
+    // Elo animado no fragmento
+    const eloG = this.add.graphics().setScrollFactor(0).setDepth(51);
+    let eloT = 0;
+    const eloTimer = this.time.addEvent({ delay: 50, loop: true, callback: () => {
+      eloT += 0.08;
+      const ex = cx - 130 + Math.sin(eloT) * 3, ey = cy - 30 + Math.cos(eloT * 0.8) * 3;
+      eloG.clear();
+      eloG.fillStyle(0x8090d0, 0.08); eloG.fillCircle(ex, ey, 14);
+      eloG.fillStyle(0xb0c0f0, 0.15); eloG.fillCircle(ex, ey, 7);
+      eloG.fillStyle(0xdde8ff, 0.7); eloG.fillCircle(ex, ey, 2);
+      eloG.fillStyle(0xffffff, 0.9); eloG.fillRect(Math.round(ex)-1, Math.round(ey)-1, 2, 2);
+    }});
+
+    // Speaker
+    this.add.text(cx - 140, cy - 46, `— ${frag.speaker} —`, {
+      fontFamily: 'monospace', fontSize: '5px', color: frag.color, letterSpacing: 2
+    }).setScrollFactor(0).setDepth(51);
+
+    // Texto do fragmento
+    this.add.text(cx - 100, cy - 32, frag.text, {
+      fontFamily: 'monospace', fontSize: '6px', color: '#8890b8',
+      wordWrap: { width: 266 }, lineSpacing: 4, align: 'left',
+    }).setScrollFactor(0).setDepth(51);
+
+    // Continuar
+    const continueHint = this.add.text(cx, cy + 44, '[ ENTER ]  continuar', {
+      fontFamily: 'monospace', fontSize: '5px', color: '#2a2848'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(51);
+    this.tweens.add({ targets: continueHint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
+
+    const close = () => {
+      eloTimer.destroy();
+      eloG.destroy();
+      panelG.destroy();
+      continueHint.destroy();
+      this.input.keyboard.off('keydown-ENTER', close);
+      this.input.keyboard.off('keydown-SPACE', close);
+      this.input.keyboard.off('keydown-Z', close);
+      if (callback) callback();
+    };
+
+    this.input.keyboard.once('keydown-ENTER', close);
+    this.input.keyboard.once('keydown-SPACE', close);
+    this.input.keyboard.once('keydown-Z', close);
+    this.input.once('pointerdown', close);
   }
 
   _offerRelic() {
     const RELICS = [
-      { id:'iron_nerve', name:'Nervo de Ferro', desc:'Janela de parry +80ms', img:'relic_iron_nerve',
+      { id:'iron_nerve', name:'Confiança Maior', desc:'Janela de confiança +80ms', img:'relic_iron_nerve',
         apply() { Run.buffs.parryBonus = (Run.buffs.parryBonus || 0) + 80; } },
-      { id:'blood_fw', name:'Firmware Sanguíneo', desc:'Parry cura 4 HP', img:'relic_blood_fw', apply() {} },
-      { id:'overclock', name:'Sobrecarga', desc:'DMG +40%  HP máx -20%', img:'relic_overclock',
+      { id:'blood_fw', name:'Eco de Elo', desc:'Confiar cura 4 de Vontade', img:'relic_blood_fw', apply() {} },
+      { id:'overclock', name:'Eco de Raiva', desc:'Dano +40%  Vontade máx -20%', img:'relic_overclock',
         apply() { Run.buffs.dmgMult = (Run.buffs.dmgMult || 1) * 1.4; Run.maxHp = Math.max(20, Math.floor(Run.maxHp * 0.8)); Run.hp = Math.min(Run.hp, Run.maxHp); } },
-      { id:'scrap_marrow', name:'Tutano de Ferro', desc:'+3 scrap por abate', img:'relic_scrap_marrow', apply() {} },
-      { id:'phantom_limb', name:'Membro Fantasma', desc:'Dash→ próximo ataque 2x', img:'relic_phantom_limb', apply() {} },
-      { id:'dogma_shard', name:'Estilhaço de Dogma', desc:'5 abates = +10 HP', img:'relic_dogma_shard', apply() {} },
+      { id:'scrap_marrow', name:'Memória Acumulada', desc:'+3 lembranças por fragmento dissolvido', img:'relic_scrap_marrow', apply() {} },
+      { id:'phantom_limb', name:'Sombra de Mim', desc:'Desviar → próximo golpe 2x', img:'relic_phantom_limb', apply() {} },
+      { id:'dogma_shard', name:'Calendário Riscado', desc:'5 fragmentos dissolvidos = +10 Vontade', img:'relic_dogma_shard', apply() {} },
       // ── NOVOS ITENS ───────────────────────────────────────────────────────
-      { id:'flame_heart', name:'Coração de Chama', desc:'Críticos causam queimadura (+30%)', img:'relic_flame_heart', apply() {} },
-      { id:'echo_shield', name:'Escudo de Eco', desc:'Sobrevive 1x com 15% HP', img:'relic_echo_shield',
+      { id:'flame_heart', name:'Grito Engolido', desc:'Acertos críticos ecoam (+30% dano)', img:'relic_flame_heart', apply() {} },
+      { id:'echo_shield', name:'Ficar Perto É Suficiente', desc:'Sobrevive 1x com 15% de Vontade', img:'relic_echo_shield',
         apply() { Run._shieldUsed = false; } },
-      { id:'shadow_mantle', name:'Manto de Sombra', desc:'Stamina -50% em dash/parry', img:'relic_shadow_mantle', apply() {} },
+      { id:'shadow_mantle', name:'Olhar Pra Trás', desc:'Energia -50% ao confiar/desviar', img:'relic_shadow_mantle', apply() {} },
     ];
 
     const choices = [...RELICS].sort(() => Math.random() - 0.5).slice(0, 3).filter(r => !Run.relics.find(x => x.id === r.id));
@@ -1921,10 +2384,10 @@ class RoomScene extends Phaser.Scene {
     panelG.lineStyle(0.5, 0x6b3a1a); panelG.strokeRect(cx - 130, cy - 50, 260, 100);
     panelG.lineStyle(0.5, 0xc8a030, 0.3); panelG.strokeRect(cx - 128, cy - 48, 256, 96);
 
-    this.add.text(cx, cy - 40, 'IMPLANTE ENCONTRADO', {
+    this.add.text(cx, cy - 40, 'FRAGMENTO DE MEMÓRIA', {
       fontFamily: 'monospace', fontSize: '7px', color: '#aa8855', letterSpacing: 2
     }).setOrigin(0.5).setScrollFactor(0);
-    this.add.text(cx, cy - 30, 'escolha um para equipar', {
+    this.add.text(cx, cy - 30, 'escolha um para carregar', {
       fontFamily: 'monospace', fontSize: '5px', color: '#3a2818'
     }).setOrigin(0.5).setScrollFactor(0);
 
@@ -2057,6 +2520,7 @@ class GameOverScene extends Phaser.Scene {
   create() {
     buildTextures(this);
     this.cameras.main.setBackgroundColor('#000000');
+    this.cameras.main.resetFX();
     this.cameras.main.fadeIn(800, 0, 0, 0);
 
     const echos = Math.floor(Run.kills * 0.6 + Run.roomsCleared * 3 + (this.scene.get('Room')?.depth || Run.depth) * 1.5);
@@ -2077,12 +2541,12 @@ class GameOverScene extends Phaser.Scene {
     }
 
     // Main text
-    this.add.text(cx, cy - 54, 'VERME CAIU', {
+    this.add.text(cx, cy - 54, 'OS OLHOS NÃO ABREM', {
       fontFamily: 'monospace', fontSize: '18px', color: '#8b0000',
       stroke: '#000', strokeThickness: 2, letterSpacing: 6
     }).setOrigin(0.5).setAlpha(0);
 
-    this.add.text(cx, cy - 32, 'A DOUTRINA PERSISTE', {
+    this.add.text(cx, cy - 32, 'SOMNARA CONTINUA SONHANDO', {
       fontFamily: 'monospace', fontSize: '7px', color: '#330000', letterSpacing: 4
     }).setOrigin(0.5).setAlpha(0);
 
@@ -2092,9 +2556,9 @@ class GameOverScene extends Phaser.Scene {
 
     // Stats
     const stats = [
-      [`SETORES VARRIDOS`, Run.roomsCleared],
-      [`ALMAS CEIFADAS`, Run.kills],
-      [`SUCATA ACUMULADA`, Run.scrap],
+      [`CAMADAS ATRAVESSADAS`, Run.roomsCleared],
+      [`FRAGMENTOS DISSOLVIDOS`, Run.kills],
+      [`LEMBRANÇAS COLETADAS`, Run.scrap],
       [`ECOS OBTIDOS`, `+${echos}Ξ`],
     ];
 
@@ -2110,7 +2574,7 @@ class GameOverScene extends Phaser.Scene {
 
     // Relics summary
     if (Run.relics.length > 0) {
-      this.add.text(cx, cy + 54, 'IMPLANTES USADOS:', {
+      this.add.text(cx, cy + 54, 'FRAGMENTOS CARREGADOS:', {
         fontFamily: 'monospace', fontSize: '5px', color: '#221010'
       }).setOrigin(0.5);
       Run.relics.forEach((r, i) => {
@@ -2119,8 +2583,26 @@ class GameOverScene extends Phaser.Scene {
       });
     }
 
+    // Citacao de lore — fragmento aleatorio da narrativa de Somnara
+    const LORE_QUOTES = [
+      '"Lugares como esse nao deixam voce ir embora tao facil."',
+      '"Fugir nao apaga. Transforma."',
+      '"O peso que voce carrega nao vai sumir aqui."',
+      '"Somnara estava absorvendo o que voce trouxe."',
+      '"As sombras do lado de fora comecam a vazar pelas frestas."',
+      '"Voce havia chegado cheio de feridas que ainda sangravam."',
+      '"Talvez, aqui, voce consiga finalmente olhar pra ele."',
+      '"Elo nao foge."',
+    ];
+    const q = LORE_QUOTES[Math.floor(Math.random() * LORE_QUOTES.length)];
+    this.add.text(cx, cy + 56, q, {
+      fontFamily: 'monospace', fontSize: '5px', color: '#1a1428',
+      align: 'center', wordWrap: { width: W - 60 }, lineSpacing: 4,
+      fontStyle: 'italic',
+    }).setOrigin(0.5).setAlpha(0);
+
     // Return prompt
-    const prompt = this.add.text(cx, cy + 90, '[ ENTER ]  RETORNAR AO SANTUÁRIO', {
+    const prompt = this.add.text(cx, cy + 90, '[ ENTER ]  VOLTAR AO LIMIAR', {
       fontFamily: 'monospace', fontSize: '6px', color: '#221018', letterSpacing: 1
     }).setOrigin(0.5).setAlpha(0);
 
@@ -2155,7 +2637,7 @@ class UIScene extends Phaser.Scene {
     this._staminaGfx = this.add.graphics();
 
     // HP label
-    this.add.text(8, 8, 'PENITENTE', { fontFamily: 'monospace', fontSize: '5px', color: '#2a1520' });
+    this.add.text(8, 8, 'VONTADE', { fontFamily: 'monospace', fontSize: '5px', color: '#2a1520' });
 
     // Scrap icon + text
     this.add.image(10, 37, 'ui_scrap').setScale(0.8);
@@ -2176,12 +2658,19 @@ class UIScene extends Phaser.Scene {
     }
 
     // Controls hint
-    this._hint = this.add.text(W / 2, H - 6, 'Z ATACAR  ·  X APARAR  ·  C DASH', {
+    const isTouch = document.body.classList.contains('is-touch');
+    this._hint = this.add.text(W / 2, H - 6, isTouch ? 'AGIR · CONFIAR · DESVIAR' : 'Z AGIR  ·  X CONFIAR  ·  C DESVIAR', {
       fontFamily: 'monospace', fontSize: '4px', color: '#0e0c14', align: 'center'
     }).setOrigin(0.5, 1);
 
     // Depth counter
     this._depthTxt = this.add.text(W / 2, 6, '', { fontFamily: 'monospace', fontSize: '5px', color: '#0a0810' }).setOrigin(0.5, 0);
+
+    // Mensagem de Elo no inicio do sonho
+    this._eloMsg = this.add.text(W / 2, H / 2 - 20, '', {
+      fontFamily: 'monospace', fontSize: '6px', color: '#3a4070',
+      align: 'center', wordWrap: { width: W - 40 }
+    }).setOrigin(0.5).setAlpha(0).setDepth(10);
 
     this._refresh();
 
@@ -2191,6 +2680,24 @@ class UIScene extends Phaser.Scene {
     Bus.on(EV.ENEMY_DEATH, () => this._refresh(), this);
     Bus.on('relic:picked', () => this._refreshRelics(), this);
     Bus.on('run:hub', () => this._refresh(), this);
+
+    // Mensagem de Elo nas primeiras camadas
+    const ELO_MSGS = [
+      'Elo apareceu do nada.\nNao fugiu.',
+      'Elo fica perto.\nNao precisa de mais nada.',
+      'O peso que voce trouxe\npode ser olhado aqui.',
+      'Somnara lembra\no que voce esqueceu.',
+    ];
+    Bus.on('room:start', (depth) => {
+      if (depth < 4 && this._eloMsg) {
+        const msg = ELO_MSGS[depth % ELO_MSGS.length];
+        this._eloMsg.setText(msg).setAlpha(0);
+        this.tweens.add({ targets: this._eloMsg, alpha: 0.55, duration: 800, delay: 600 });
+        this.time.delayedCall(3500, () => {
+          if (this._eloMsg) this.tweens.add({ targets: this._eloMsg, alpha: 0, duration: 600 });
+        });
+      }
+    }, this);
   }
 
   _refresh() {
@@ -2241,7 +2748,7 @@ const game = new Phaser.Game({
     default: 'arcade',
     arcade: { gravity: { y: 0 }, debug: false }
   },
-  scene: [BootScene, HubScene, RoomScene, GameOverScene, UIScene],
+  scene: [BootScene, IntroScene, HubScene, RoomScene, GameOverScene, UIScene],
 });
 </script>
 </body>
