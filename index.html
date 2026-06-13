@@ -60,7 +60,9 @@
 <body>
 <div id="boot-screen">
   <h1>SOMNARA</h1>
-  <div class="sub">ONDE OS SONHOS GUARDAM O QUE VOCÊ NÃO CONSEGUE CARREGAR ACORDADO</div>
+  <div class="sub">ONDE OS SONHOS GUARDAM O QUE VOCÊ NÃO CONSEGUE CARREGAR ACORDADO
+    Z atacar X parry C dash H para ler a historia de novo WASD para movimentar
+  </div>
   <div id="boot-progress"><div id="boot-bar"></div></div>
   <div id="boot-text">inicializando...</div>
 </div>
@@ -278,7 +280,7 @@ const Perm = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-//  TEXTURE FACTORY — ALL PIXEL ART IS PROCEDURAL (Dark Souls × Blasphemous)
+//  TEXTURE FACTORY — ALL PIXEL ART IS PROCEDURAL 
 // ════════════════════════════════════════════════════════════════════════════
 function mkTex(scene, key, w, h, fn) {
   if (scene.textures.exists(key)) return;
@@ -1092,12 +1094,12 @@ class IntroScene extends Phaser.Scene {
 
     // Hint
     this.add.text(W - 8, H - 8,
-      '[ ENTER ]  avancar    [ ESC ]  pular', {
-      fontFamily: 'monospace', fontSize: '4px', color: '#151525',
+      '[ ENTER ]  AVANCAR   [ ESC ]  PULAR', {
+      fontFamily: 'monospace', fontSize: '6px', color: '#151525',
     }).setOrigin(1, 1);
 
     this._slideCounter = this.add.text(8, H - 8, '', {
-      fontFamily: 'monospace', fontSize: '4px', color: '#151525',
+      fontFamily: 'monospace', fontSize: '6px', color: '#151525',
     }).setOrigin(0, 1);
 
     // Input
@@ -1118,44 +1120,44 @@ class IntroScene extends Phaser.Scene {
     return [
       {
         title: '',
-        body:  '"Tem uma coisa que ninguem te conta sobre ser invisivel."',
-        sub:   '"Voce comeca a acreditar que e verdade."',
+        body:  '"TEM UMA COISA QUE NINGUEM TE CONTA SOBRE SER INVISIVEL"',
+        sub:   '"VOCE COMECA A ACHAR QUE E VERDADE."',
         eloX: W * 0.72, eloY: H * 0.30,
       },
       {
         title: '',
-        body:  'Ele andava pelos corredores colado na parede.\nAlmocava sozinho na ultima mesa.\nOlhava pela janela pro patio cheio de gente\nque nao enxergava ele.',
-        sub:   'Em casa nao era diferente.\nEle aprendeu a encolher. Aprendeu a nao fazer barulho.',
+        body:  'ELE ANDAVA COLDADO NA PAREDE PARA NAO INCOMODAR.\nALMOCAVA NA ULTIMA MESA PARA NINGUEM VER.\nOLHAVA PELA JANELA PARA O PATIO VENDO TUDO QUE ELE QUERIA TER\n NINGUEM ENXERGAVA ELE .',
+        sub:   'EM CASA NAO ERA DIFERENTE.\nELE APRENDEU A ENCOLHER. APRENDEU A NAO FAZER BARULHO.',
         eloX: W * 0.18, eloY: H * 0.42,
       },
       {
         title: '',
-        body:  'A noite, fechava os olhos com forca\ncomo se pudesse espremer o dia todo\npra fora da cabeca.',
-        sub:   'E entao comecou a funcionar.',
+        body:  'A NOITE, FECHAVA OS OLHOS COM FORCA\nCOMO SE PUDESSE ESPREMER O DIA TODO\NPRA FORA DA CABECA.',
+        sub:   'E ENTAO COMECOU A FUNCIONAR.',
         eloX: W * 0.80, eloY: H * 0.28,
       },
       {
         title: 'A PRIMEIRA QUEDA',
-        body:  'Nao foi um sonho bonito.\nNao foi nuvens e luz.\n\nFoi uma queda.',
-        sub:   'O chao chegou devagar\ncomo se o mundo tivesse decidido pega-lo com cuidado.',
+        body:  'NAO FOI UM SONHO BONITO.\nNAO FOI NUVENS E LUZ.\N\NFOI UMA QUEDA.',
+        sub:   'O CHAO CHEGOU DEVAGAR\nCOMO SE O MUNDO TIVESSE DECIDIDO PEGA-LO COM CUIDADO.',
         eloX: W * 0.50, eloY: H * 0.62,
       },
       {
         title: 'S  O  M  N  A  R  A',
-        body:  'O ceu era violeta e sangrava estrelas lentas.\nAs arvores cresciam de cabeca pra baixo.\nO ar cheirava a lembranca de um dia\nque talvez nunca existiu.',
-        sub:   'Ninguem gritou com ele aqui. Ninguem riu.\nO lugar simplesmente... esperava.',
+        body:  'O CEU ERA VIOLETA E SANGRAVA ESTRELAS LENTAS.\nAS ARVORES CRESCIAM DE CABECA PRA BAIXO.\nO AR CHEIRAVA A LEMBRANCA DE UM DIA\nQUE TALVEZ NUNCA EXISTIU.',
+        sub:   'NINGUEM GRITOU COM ELE AQUI. NINGUEM RIU.\nO LUGAR SIMPLESMENTE... ESPERAVA.',
         eloX: W * 0.50, eloY: H * 0.22,
       },
       {
         title: 'E  L  O',
-        body:  'Havia um ser pequeno, feito inteiramente de luz fraca.\n\nNao tem genero, nao tem idade,\nnao tem historia propria.',
-        sub:   'Nao resolve. Nao salva. So fica perto.\n\nAs vezes e o suficiente.',
+        body:  'HAVIA UM SER PEQUENO, FEITO INTEIRAMENTE DE LUZ FRACA.\n\nNAO TEM GENERO, NAO TEM IDADE,\nNAO TEM HISTORIA PROPRIA.',
+        sub:   'NAO RESOLVE. NAO SALVA. SO FICA PERTO.\n\nAS VEZES E O SUFICIENTE.',
         eloX: W * 0.50, eloY: H * 0.46,
       },
       {
         title: '',
-        body:  'Somnara estava tentando dizer alguma coisa\nem silencio, com cada arvore invertida\ne cada rio que sobe.',
-        sub:   '"Voce veio pra se esconder\nou pra se encontrar?"',
+        body:  'SOMNARA ESTAVA TENTANDO DIZER ALGUMA COISA\nEM SILENCIO, COM CADA ARVORE INVERTIDA\nE CADA RIO QUE SOBE.',
+        sub:   '"VOCE VEIO PRA SE ESCONDER\nOU PRA SE ENCONTRAR?"',
         eloX: W * 0.50, eloY: H * 0.50,
       },
     ];
@@ -1365,10 +1367,10 @@ class HubScene extends Phaser.Scene {
 
     // Fragmentos de lore flututando como folhas
     const fragments = [
-      { txt: '"Ele aprendeu a encolher."', x: 40,  y: 100, angle: -8 },
-      { txt: '"Nao fazer barulho."',        x: 200, y: 80,  angle: 5  },
-      { txt: '"O lugar simplesmente...\nesperava."', x: 340, y: 120, angle: -4 },
-      { txt: '"As vezes e o suficiente."', x: 110, y: 145, angle: 7  },
+      { txt: '"ELE APRENDEU A ESCOLHER."', x: 40,  y: 100, angle: -8 },
+      { txt: '"NAO FAZER BARULHO PARA NAO INCOMODAR"',        x: 200, y: 80,  angle: 5  },
+      { txt: '"O LUGAR SIMPLESMENTE \nESPERAVA."', x: 340, y: 120, angle: -4 },
+      { txt: '"AS VEZES E SUFICIENTE"', x: 110, y: 145, angle: 7  },
     ];
     fragments.forEach(({ txt, x, y, angle }) => {
       this.add.text(x, y, txt, {
@@ -1649,9 +1651,9 @@ class RoomScene extends Phaser.Scene {
     // Textos ambiente — fragmentos da narrativa de Somnara espalhados pelas paredes
     const atm = [
       'VOCE JA ESTEVE AQUI?', 'ELE APRENDEU A ENCOLHER',
-      'SOMNARA LEMBRA', 'OS RIOS SOBEM',
+      'SOMNARA LEMBRA', 'EU NAO QUERO LEMBRAR',
       'AS ARVORES TEM RAIZES NO CEU', 'O LUGAR ESPERAVA',
-      'ELO FICA PERTO', 'ONDE OS SONHOS GUARDAM',
+      'ELO FICA PERTO POR FAVOR', 'ONDE OS SONHOS GUARDAM',
       'NAO TEM VOLTA FACIL', 'O DIA QUE TALVEZ NUNCA EXISTIU',
     ];
     for (let i = 0; i < Math.floor(this._roomW / 120); i++) {
