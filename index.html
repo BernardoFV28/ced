@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -92,6 +93,90 @@ const BASE_DMG = 22, PLAYER_MAX_HP = 100;
 const CRIT_CHANCE = 0.12, CRIT_MULT = 1.8;
 const ATTACK_DUR = 210, COMBO_WIN = 380;
 const STAMINA_MAX = 100, STAMINA_REGEN = 18, DASH_STAMINA = 30, PARRY_STAMINA = 20;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  WEAPONS — cada arma muda dano, alcance, velocidade e VFX
+// ════════════════════════════════════════════════════════════════════════════
+const WEAPONS = [
+  {
+    id: 'espada',
+    name: 'Espada Penitente',
+    desc: 'Equilibrada. A lâmina que carrega o peso.',
+    dmgMult: 1.0, range: 36, atkDur: 210, critBonus: 0,
+    color: 0xc8d8e8, sfx: 'hit',
+    vfxColor: 0xc8d8e8,
+  },
+  {
+    id: 'adaga',
+    name: 'Adaga de Sombra',
+    desc: 'Dois golpes rápidos. Pouco dano, alta velocidade.',
+    dmgMult: 0.65, range: 26, atkDur: 130, critBonus: 0.10,
+    color: 0x8090d0, sfx: 'hit',
+    vfxColor: 0x9080ff,
+    doubleStrike: true,
+  },
+  {
+    id: 'martelo',
+    name: 'Martelo do Eco',
+    desc: 'Lento e pesado. Acertos causam tremor e knockback dobrado.',
+    dmgMult: 1.8, range: 40, atkDur: 340, critBonus: -0.05,
+    color: 0xc8a030, sfx: 'crit',
+    vfxColor: 0xffaa40,
+    shockwave: true,
+  },
+  {
+    id: 'lanca',
+    name: 'Lança da Vigília',
+    desc: 'Longo alcance. Acerta inimigos atrás de você também.',
+    dmgMult: 0.9, range: 55, atkDur: 200, critBonus: 0.05,
+    color: 0x60c080, sfx: 'hit',
+    vfxColor: 0x80ff90,
+    pierce: true,
+  },
+];
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PETS — companheiros que seguem o jogador e dão bônus passivos
+// ════════════════════════════════════════════════════════════════════════════
+const PETS_DATA = [
+  {
+    id: 'elo_menor',
+    name: 'Elo (companheiro)',
+    desc: 'Cura 1 HP a cada 4s quando parado.',
+    color: 0xc0d8ff,
+    size: 4,
+    passive: 'regen_idle',
+  },
+  {
+    id: 'fragminha',
+    name: 'Fragminha',
+    desc: 'Ataca inimigos próximos por 5 de dano a cada 3s.',
+    color: 0xff8844,
+    size: 5,
+    passive: 'auto_attack',
+    atkInterval: 3000,
+    atkDmg: 5,
+  },
+  {
+    id: 'espectro',
+    name: 'Espectro',
+    desc: '+10% de chance de crítico.',
+    color: 0xaa88ff,
+    size: 4,
+    passive: 'crit_bonus',
+    critBonus: 0.10,
+  },
+  {
+    id: 'brasa',
+    name: 'Brasa',
+    desc: 'Aumenta o dano em +15% mas te faz tomar +10% de dano.',
+    color: 0xff4410,
+    size: 5,
+    passive: 'dmg_boost',
+    dmgMult: 1.15,
+    dmgTaken: 1.10,
+  },
+];
 
 // ════════════════════════════════════════════════════════════════════════════
 //  SYNTHETIC SOUND ENGINE (AudioContext — no assets needed)
@@ -212,12 +297,15 @@ const Run = {
   combo: 0, comboExpiry: 0,
   roomHistory: [], // minimap
   buffs: {}, // dmgMult, parryBonus, noHeal, deathExplode
+  weapon: WEAPONS[0], // arma equipada
+  pet: null,         // pet ativo
   reset() {
     this.hp = PLAYER_MAX_HP; this.maxHp = PLAYER_MAX_HP;
     this.scrap = 0; this.relics = []; this.kills = 0;
     this.roomsCleared = 0; this.depth = 0; this.buffs = {};
     this.stamina = STAMINA_MAX; this.maxStamina = STAMINA_MAX;
     this.combo = 0; this.comboExpiry = 0; this.roomHistory = [];
+    this.weapon = WEAPONS[0]; this.pet = null;
   },
   hurt(n, srcX) {
     if (this.buffs.noHeal && n < 0) return;
@@ -231,7 +319,16 @@ const Run = {
     Bus.emit(EV.HEAL, { hp: this.hp });
   },
   addScrap(n) { this.scrap += n; Bus.emit(EV.SCRAP, this.scrap); },
-  dmg() { return BASE_DMG * (this.buffs.dmgMult || 1); },
+  dmg() {
+    const wMult = this.weapon ? this.weapon.dmgMult : 1;
+    const pMult = (this.pet && this.pet.dmgMult) ? this.pet.dmgMult : 1;
+    return BASE_DMG * (this.buffs.dmgMult || 1) * wMult * pMult;
+  },
+  critChance() {
+    const wBonus = this.weapon ? (this.weapon.critBonus || 0) : 0;
+    const pBonus = (this.pet && this.pet.critBonus) ? this.pet.critBonus : 0;
+    return Math.max(0, CRIT_CHANCE + wBonus + pBonus);
+  },
   parryWindow() { return PARRY_WIN + (this.buffs.parryBonus || 0); },
   useStamina(n) {
     // Shadow Mantle relic: 50% stamina cost reduction
@@ -998,6 +1095,78 @@ function buildTextures(scene) {
 
   mkTex(scene, 'ui_hp_fill', 1, 6, (ctx) => {
     ctx.fillStyle = '#cc2233'; ctx.fillRect(0,0,1,6);
+  });
+
+  // ── WEAPON ICONS ─────────────────────────────────────────────────────────
+  mkTex(scene, 'weapon_espada', 14, 14, (ctx) => {
+    ctx.fillStyle = '#0a0c14'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#1a2030'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = '#aab8cc'; ctx.fillRect(6,2,2,8); // blade
+    ctx.fillStyle = '#c8d8e8'; ctx.fillRect(6,2,1,5);
+    ctx.fillStyle = '#c8a030'; ctx.fillRect(4,8,6,1); // guard
+    ctx.fillStyle = '#6b3a1a'; ctx.fillRect(6,9,2,3); // grip
+  });
+  mkTex(scene, 'weapon_adaga', 14, 14, (ctx) => {
+    ctx.fillStyle = '#080814'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#101030'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = '#9080d0'; ctx.fillRect(6,3,2,6); // blade short
+    ctx.fillStyle = '#c0b0ff'; ctx.fillRect(6,3,1,3);
+    ctx.fillStyle = '#5040a0'; ctx.fillRect(4,8,6,1); // crossguard
+    ctx.fillStyle = '#301830'; ctx.fillRect(6,9,2,3);
+    ctx.fillStyle = '#7060d0'; ctx.fillRect(5,2,4,2); // tip
+  });
+  mkTex(scene, 'weapon_martelo', 14, 14, (ctx) => {
+    ctx.fillStyle = '#140a00'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#281800'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = '#6b5030'; ctx.fillRect(6,5,2,7); // handle
+    ctx.fillStyle = '#c8a030'; ctx.fillRect(2,2,10,5); // head
+    ctx.fillStyle = '#e0b840'; ctx.fillRect(3,3,8,3);
+    ctx.fillStyle = '#fff080'; ctx.fillRect(5,3,3,1);
+  });
+  mkTex(scene, 'weapon_lanca', 14, 14, (ctx) => {
+    ctx.fillStyle = '#001408'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#002010'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = '#4a8060'; ctx.fillRect(6,2,2,10); // shaft
+    ctx.fillStyle = '#60c080'; ctx.fillRect(5,1,4,4); // tip
+    ctx.fillStyle = '#80ff90'; ctx.fillRect(6,2,2,2);
+    ctx.fillStyle = '#304030'; ctx.fillRect(5,10,4,2); // butt
+  });
+  // ── PET ICONS ─────────────────────────────────────────────────────────────
+  mkTex(scene, 'pet_elo_menor', 14, 14, (ctx) => {
+    ctx.fillStyle = '#000814'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#001428'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = 'rgba(160,200,255,0.4)'; ctx.beginPath(); ctx.arc(7,7,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c0d8ff'; ctx.beginPath(); ctx.arc(7,7,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(6,6,2,2);
+  });
+  mkTex(scene, 'pet_fragminha', 14, 14, (ctx) => {
+    ctx.fillStyle = '#140400'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#281000'; ctx.fillRect(1,1,12,12);
+    // Mini enemy-like critter
+    ctx.fillStyle = '#ff8844'; ctx.fillRect(4,5,6,5);
+    ctx.fillStyle = '#cc5522'; ctx.fillRect(5,6,4,3);
+    ctx.fillStyle = '#ff4410'; ctx.fillRect(5,4,2,2); ctx.fillRect(7,4,2,2); // horns
+    ctx.fillStyle = '#ffcc80'; ctx.fillRect(5,7,2,1); ctx.fillRect(7,7,2,1); // eyes
+  });
+  mkTex(scene, 'pet_espectro', 14, 14, (ctx) => {
+    ctx.fillStyle = '#080010'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#100020'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = 'rgba(180,120,255,0.3)'; ctx.fillRect(4,3,6,9);
+    ctx.fillStyle = '#aa88ff'; ctx.fillRect(5,4,4,7);
+    ctx.fillStyle = '#c0a0ff'; ctx.fillRect(6,5,2,5);
+    ctx.fillStyle = '#e0c0ff'; ctx.fillRect(6,6,2,2);
+    // Wispy tail
+    ctx.fillStyle = 'rgba(160,100,255,0.4)'; ctx.fillRect(4,10,2,2); ctx.fillRect(8,10,2,2);
+  });
+  mkTex(scene, 'pet_brasa', 14, 14, (ctx) => {
+    ctx.fillStyle = '#140000'; ctx.fillRect(0,0,14,14);
+    ctx.fillStyle = '#280000'; ctx.fillRect(1,1,12,12);
+    ctx.fillStyle = '#ff4410'; ctx.fillRect(4,6,6,6);
+    ctx.fillStyle = '#ff8030'; ctx.fillRect(5,5,4,5);
+    ctx.fillStyle = '#ffcc60'; ctx.fillRect(6,4,2,4);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(6,4,1,1);
+    // Flame tendrils
+    ctx.fillStyle = '#ff6020'; ctx.fillRect(3,7,2,3); ctx.fillRect(9,7,2,3);
   });
 
   mkTex(scene, 'ui_scrap', 10, 10, (ctx) => {
@@ -1935,7 +2104,8 @@ class RoomScene extends Phaser.Scene {
     const isCombo = this.comboStep === 1 && this.comboTimer > 0;
     this.comboStep = isCombo ? 0 : 1;
     this.comboTimer = COMBO_WIN;
-    this.attackTimer = ATTACK_DUR;
+    const w = Run.weapon;
+    this.attackTimer = w.atkDur;
 
     const frames = isCombo ? ['player_atk3'] : ['player_atk1', 'player_atk2'];
     const frame = frames[Math.floor(Math.random() * frames.length)];
@@ -1946,20 +2116,36 @@ class RoomScene extends Phaser.Scene {
     const dmg = Run.dmg() * (isCombo ? 1.5 : 1);
     this._checkAtkHit(dmg);
 
-    // Sword slash VFX
-    this._spawnSlashVFX();
+    // Double strike for adaga
+    if (w.doubleStrike) {
+      this.time.delayedCall(80, () => {
+        if (!this.isDead) this._checkAtkHit(dmg * 0.75);
+      });
+    }
 
-    this.time.delayedCall(ATTACK_DUR - 40, () => {
+    // Sword slash VFX
+    this._spawnSlashVFX(w.vfxColor);
+
+    // Shockwave for martelo
+    if (w.shockwave) {
+      const g = this.add.graphics();
+      g.lineStyle(2, w.vfxColor, 0.7);
+      g.strokeCircle(this.player.x, this.player.y, 12);
+      this.tweens.add({ targets: g, alpha: 0, scaleX: 2.5, scaleY: 2.5, duration: 200, onComplete: () => g.destroy() });
+      this.cameras.main.shake(60, 0.004);
+    }
+
+    this.time.delayedCall(w.atkDur - 40, () => {
       this.atkBox.setActive(false);
       this.atkBox.body.setEnable(false);
     });
   }
 
-  _spawnSlashVFX() {
+  _spawnSlashVFX(color = 0xc8d8e8) {
     const g = this.add.graphics();
     const ox = this.facingRight ? 18 : -18;
     const x = this.player.x + ox, y = this.player.y - 2;
-    g.lineStyle(1, 0xc8d8e8, 0.9);
+    g.lineStyle(1, color, 0.9);
     for (let i = 0; i < 3; i++) {
       g.beginPath();
       g.moveTo(x - (this.facingRight ? 8 : -8), y - 8 + i * 4);
@@ -1971,6 +2157,7 @@ class RoomScene extends Phaser.Scene {
     // Spark particles
     for (let i = 0; i < 3; i++) {
       const sp = this.add.image(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10, 'particle_spark');
+      sp.setTint(color);
       this.tweens.add({
         targets: sp, x: x + (Math.random() - 0.5) * 20, y: y - 10 - Math.random() * 10,
         alpha: 0, duration: 180, onComplete: () => sp.destroy()
@@ -2029,12 +2216,17 @@ class RoomScene extends Phaser.Scene {
   }
 
   _checkAtkHit(dmg) {
+    const range = Run.weapon ? Run.weapon.range : 36;
+    const pierce = Run.weapon && Run.weapon.pierce;
     this.enemies.forEach(e => {
       if (!e.alive) return;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.sprite.x, e.sprite.y);
-      const inFront = this.facingRight ? e.sprite.x > this.player.x - 8 : e.sprite.x < this.player.x + 8;
-      if (dist < 36 && inFront) {
-        const crit = Math.random() < CRIT_CHANCE;
+      // Pierce (lança) hits both directions
+      const inFront = pierce
+        ? dist < range
+        : (this.facingRight ? e.sprite.x > this.player.x - 8 : e.sprite.x < this.player.x + 8) && dist < range;
+      if (inFront) {
+        const crit = Math.random() < Run.critChance();
         const final = Math.round(crit ? dmg * CRIT_MULT : dmg);
         this._hitEnemy(e, final, crit);
       }
